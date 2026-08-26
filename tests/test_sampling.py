@@ -3,7 +3,11 @@
 import pytest
 
 from burninghouse_qc.config import TextConfig
-from burninghouse_qc.detectors.text import plan_timestamps
+from burninghouse_qc.detectors.text import (
+    effective_interval,
+    ocr_scale,
+    plan_timestamps,
+)
 
 
 def test_baseline_interval_covers_the_whole_clip():
@@ -27,12 +31,30 @@ def test_frames_are_never_closer_than_the_minimum_gap():
     assert all(b - a >= 0.5 - 1e-6 for a, b in zip(stamps, stamps[1:]))
 
 
-def test_max_frames_thins_evenly_instead_of_truncating():
-    """A 90-minute master must not get all its coverage in the first two minutes."""
+def test_max_frames_widens_the_interval_instead_of_truncating():
+    """A long master must not get all its coverage in the first two minutes."""
     cfg = TextConfig(sample_interval=1.0, max_frames=20, scene_followup_offsets=[])
     stamps = plan_timestamps(600.0, [], cfg)
-    assert len(stamps) == 20
+    assert len(stamps) <= 20
     assert stamps[-1] > 500, "coverage should reach the end of the programme"
+    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+    assert max(gaps) - min(gaps) < 0.01, "the widened grid should stay evenly spaced"
+
+
+def test_a_ten_minute_clip_keeps_the_requested_interval():
+    """The house case (2-10 min) must fit the budget without widening."""
+    cfg = TextConfig()
+    assert effective_interval(600.0, cfg) == cfg.sample_interval
+    assert len(plan_timestamps(600.0, [], cfg)) <= cfg.max_frames
+
+
+def test_scene_followups_cannot_starve_the_baseline_grid():
+    """A cut-heavy opening must not eat the whole frame budget."""
+    cfg = TextConfig(sample_interval=2.0, max_frames=60)
+    cuts = [i * 0.5 for i in range(200)]        # 100s of relentless cutting
+    stamps = plan_timestamps(600.0, cuts, cfg)
+    assert len(stamps) <= cfg.max_frames
+    assert max(stamps) > 500, "sampling must still reach the end of the clip"
 
 
 def test_timestamps_stay_inside_the_clip():
@@ -44,3 +66,12 @@ def test_timestamps_stay_inside_the_clip():
 @pytest.mark.parametrize("duration", [0.0, -1.0])
 def test_zero_length_input_plans_nothing(duration):
     assert plan_timestamps(duration, [], TextConfig()) == []
+
+
+@pytest.mark.parametrize(
+    "height,expected",
+    [(720, 2.0), (1080, 1440 / 1080), (1440, 1.0), (2160, 1.0)],
+)
+def test_ocr_scale_normalises_toward_the_target_height(height, expected):
+    """720p is upscaled, 1080p less so, and large frames are never shrunk."""
+    assert ocr_scale(height, TextConfig()) == pytest.approx(expected)

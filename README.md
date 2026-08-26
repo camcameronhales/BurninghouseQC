@@ -4,8 +4,8 @@ Unattended QC for rendered video. Watches a folder, checks each new render for
 misspellings in on-screen graphics and for technical faults, writes a report,
 and sorts the file into **pass**, **review** or **error**.
 
-Built to run as a background service on a single edit machine — no UI, no
-server, no login required.
+Built to run as a launchd background service on a single macOS edit machine —
+no UI, no server, nobody watching it.
 
 ```
 input/                       pass/    Client_Spot_v4.mp4
@@ -48,13 +48,29 @@ while genuine typos like `coulour` are still flagged. Brand names, client names
 and jargon go in [`dictionary/custom_words.txt`](dictionary/custom_words.txt) —
 a plain text file, one word per line, re-read on every job, no restart needed.
 
-### Frame sampling
+### Frame sampling and runtime
 
-Sampling every frame of a 90-minute master would take longer than the render.
-Instead the pipeline samples on a fixed interval (default every 2s) *and* adds
-extra frames just after each detected scene change, because on-screen supers
-almost always arrive on a cut. A hard ceiling (`max_frames`) keeps long
-programmes bounded, thinning coverage evenly rather than giving up partway.
+Sampling every frame would take longer than the render. The pipeline samples on
+a fixed interval (default every 1.5s) *and* adds extra frames just after each
+detected scene change, because supers almost always arrive on a cut. 1.5s is
+chosen so that any card held for 3s or more is sampled at least twice, which is
+what a misspelling needs before it can fail a file rather than route to review.
+
+House deliverables run **2–10 minutes**, which fits the full cadence inside the
+`max_frames` budget. Longer clips widen the interval rather than losing
+coverage at the end of the programme.
+
+Measured on a 5-minute 1080p clip: **160s**, or roughly **30s of QC per minute
+of video**, so a 10-minute master lands around 5 minutes. Three things keep it
+there — black and scene detection share a single decode pass, the whole
+baseline grid is pulled in one more pass instead of one seek per frame, and
+frames are normalised to ~1440px tall before OCR rather than blindly upscaled
+2x. Together those took a 5-minute clip from 244s to 160s while sampling *more*
+frames than before.
+
+(Those numbers are from the Linux container this was built in, against
+deliberately busy synthetic footage. Treat them as indicative — real graded
+footage OCRs faster, and an Apple Silicon Mac will differ.)
 
 ---
 
@@ -63,23 +79,16 @@ programmes bounded, thinning coverage evenly rather than giving up partway.
 Needs **Python 3.11+**, **FFmpeg** and **Tesseract OCR** on `PATH`.
 
 ```bash
+brew install ffmpeg tesseract          # Linux: sudo apt install ffmpeg tesseract-ocr
+
 git clone https://github.com/camcameronhales/BurninghouseQC.git
 cd BurninghouseQC
-python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
+python3 -m venv .venv && . .venv/bin/activate
 pip install -e .
 
 bhqc init          # creates the QC folders and a config.toml
 bhqc doctor        # checks FFmpeg, Tesseract, the dictionary and the folders
 ```
-
-<details>
-<summary>Getting FFmpeg and Tesseract</summary>
-
-- **Windows** — `winget install Gyan.FFmpeg UB-Mannheim.TesseractOCR`, then
-  reopen the terminal so `PATH` updates.
-- **macOS** — `brew install ffmpeg tesseract`
-- **Debian/Ubuntu** — `sudo apt install ffmpeg tesseract-ocr`
-</details>
 
 ## Use
 
@@ -100,9 +109,10 @@ bhqc -c config.toml status
 `scan` and `run` exit `0` on pass, `10` on review and `20` on fail, so they drop
 straight into a render script or a scheduled task.
 
-To start it automatically at boot, see
-**[`docs/service-setup.md`](docs/service-setup.md)** — NSSM or Task Scheduler on
-Windows, launchd on macOS.
+To install it as a launchd agent that starts on its own, see
+**[`docs/service-setup.md`](docs/service-setup.md)**. That doc also covers the
+three macOS things that catch people out: launchd not inheriting your `PATH`,
+Full Disk Access for protected folders, and FSEvents not firing on SMB shares.
 
 ### Knowing when a render has finished
 
@@ -113,6 +123,19 @@ together, so an in-progress render is never QC'd mid-write:
   and the rename to the final name is what triggers the pick-up;
 - everything else must report an identical size and mtime across three
   consecutive polls (~10s of quiet) before processing starts.
+
+Only `.mov` and `.mp4` are picked up by default — the house delivery formats.
+Anything FFmpeg can decode works; add its extension to `watcher.video_extensions`.
+
+### On a Mac specifically
+
+- **Network shares.** FSEvents doesn't fire for SMB or AFP mounts, so a render
+  dropped on a NAS would never be noticed. The watcher detects a network mount
+  and switches to polling by itself.
+- **Sleep.** A `caffeinate` assertion is held for the duration of each job, so
+  the machine can't doze off mid-QC — and released while idle, so it still
+  sleeps normally between renders.
+- **Finder noise.** `.DS_Store` and `._` AppleDouble forks are ignored.
 
 ---
 
@@ -142,6 +165,9 @@ burninghouse_qc/
   report.py         the self-contained HTML report
   spelling.py       dictionary + custom word list + OCR-aware filtering
   variants.py       British/Australian spelling tolerance
+  scan.py           one decode pass shared by black + scene detection
+  mounts.py         network-share detection (FSEvents vs polling)
+  power.py          caffeinate assertion held only while a job runs
   ffmpeg_tools.py   ffmpeg/ffprobe wrappers
   detectors/
     black.py        blackdetect
@@ -149,7 +175,7 @@ burninghouse_qc/
     text.py         frame sampling -> OCR -> spell-check
 scripts/make_sample.py   generates test footage with known faults
 docs/                    service setup and threshold tuning
-service/                 Windows .bat and macOS launchd plist
+service/                 macOS launchd plist
 ```
 
 ## Tests
@@ -171,3 +197,6 @@ thresholds have drifted.
 Multi-machine rollout, auto-update, a GUI dashboard, and cloud OCR. Frozen
 frame detection, loudness and resolution checks are stubs-to-be — the detector
 interface takes a new check in one file.
+
+Windows was scoped out once the edit machine was confirmed as a Mac. Nothing in
+the app is macOS-only; only the service wrapper would need writing.

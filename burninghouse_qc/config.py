@@ -44,13 +44,21 @@ class WatcherConfig:
     ignore_extensions: list[str] = field(
         default_factory=lambda: [".tmp", ".part", ".partial", ".crdownload", ".download"]
     )
-    video_extensions: list[str] = field(
-        default_factory=lambda: [
-            ".mov", ".mp4", ".mxf", ".m4v", ".avi", ".mkv", ".prores", ".r3d", ".webm",
-        ]
-    )
-    # Files starting with these prefixes are skipped (macOS resource forks etc).
+    # House deliverables are mp4 and mov. Anything FFmpeg can decode will work
+    # if you add its extension here.
+    video_extensions: list[str] = field(default_factory=lambda: [".mov", ".mp4"])
+    # Files starting with these prefixes are skipped (.DS_Store, macOS
+    # AppleDouble resource forks, our own scratch naming).
     ignore_prefixes: list[str] = field(default_factory=lambda: [".", "~", "_qc_"])
+    # "auto" | "true" | "false". macOS delivers events via FSEvents, which does
+    # not fire for SMB/AFP shares, so a network input folder needs polling.
+    # "auto" detects the mount type and picks for you.
+    use_polling: str = "auto"
+    # How often the polling observer re-scans, when it is in use.
+    polling_interval: float = 5.0
+    # Hold a power assertion (caffeinate) while a job runs, so an idle edit
+    # machine cannot fall asleep mid-QC. macOS only; ignored elsewhere.
+    prevent_sleep: bool = True
 
 
 @dataclass
@@ -82,8 +90,10 @@ class SilenceConfig:
 @dataclass
 class TextConfig:
     enabled: bool = True
-    # Baseline sampling cadence, in seconds.
-    sample_interval: float = 2.0
+    # Baseline sampling cadence, in seconds. At 1.5s any card held for 3s or
+    # more is sampled at least twice, which is what `fail_min_occurrences`
+    # needs before a misspelling can fail a file rather than route to review.
+    sample_interval: float = 1.5
     # ffmpeg scene score above which a cut is assumed — graphics-heavy sections
     # get denser coverage because titles usually arrive on a cut.
     scene_threshold: float = 0.35
@@ -91,8 +101,10 @@ class TextConfig:
     scene_followup_offsets: list[float] = field(default_factory=lambda: [0.15, 0.60, 1.20])
     # Never sample two frames closer together than this.
     min_frame_gap: float = 0.40
-    # Hard ceiling on frames per job, to bound runtime on long masters.
-    max_frames: int = 400
+    # Hard ceiling on frames per job, to bound runtime on long masters. 600
+    # lets a 10-minute deliverable keep the full 1.5s cadence; longer clips
+    # widen the interval rather than losing coverage at the end.
+    max_frames: int = 600
     tesseract_lang: str = "eng"
     # Tesseract page segmentation mode. 11 = sparse text, best for graphics.
     tesseract_psm: int = 11
@@ -105,8 +117,15 @@ class TextConfig:
     fail_min_occurrences: int = 2
     # Tokens shorter than this are ignored (too noisy from OCR).
     min_word_length: int = 4
-    # Upscale frames before OCR; small on-screen type reads much better.
-    ocr_upscale: float = 2.0
+    # Frames are rescaled to roughly this height before OCR. Small burnt-in
+    # type reads far better upscaled, but upscaling an already-large frame just
+    # burns time: at 2x a 1080p frame costs ~0.9s to OCR, at this setting ~0.5s
+    # for the same result. 720p gets 2.0x, 1080p ~1.33x, 1440p and up are left
+    # alone (never downscaled — that would shrink small type below what
+    # Tesseract can read).
+    ocr_target_height: int = 1440
+    ocr_min_scale: float = 1.0
+    ocr_max_scale: float = 3.0
 
 
 @dataclass

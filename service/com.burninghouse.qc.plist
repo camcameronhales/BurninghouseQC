@@ -2,11 +2,13 @@
 <!--
   Burninghouse QC — macOS launchd agent.
 
-  1. Edit the three paths below to match the install.
-  2. cp service/com.burninghouse.qc.plist ~/Library/LaunchAgents/
-  3. launchctl load -w ~/Library/LaunchAgents/com.burninghouse.qc.plist
+  Edit the paths below to match the install, then:
 
-  RunAtLoad + KeepAlive means it starts at login and restarts if it ever dies.
+    cp service/com.burninghouse.qc.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.burninghouse.qc.plist
+
+  See docs/service-setup.md for the full walkthrough, including the two things
+  that reliably bite on macOS: launchd's PATH, and Full Disk Access.
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -17,18 +19,22 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/edit/BurninghouseQC/.venv/bin/python</string>
+    <string>/Users/Shared/BurninghouseQC/.venv/bin/python</string>
     <string>-m</string>
     <string>burninghouse_qc.cli</string>
     <string>-c</string>
-    <string>/Users/edit/BurninghouseQC/config.toml</string>
+    <string>/Users/Shared/BurninghouseQC/config.toml</string>
     <string>watch</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/edit/BurninghouseQC</string>
+  <string>/Users/Shared/BurninghouseQC</string>
 
-  <!-- Homebrew installs ffmpeg/tesseract outside launchd's default PATH. -->
+  <!--
+    launchd does not inherit a shell PATH, so FFmpeg and Tesseract have to be
+    named explicitly. /opt/homebrew/bin is Apple Silicon; /usr/local/bin is
+    Intel. Leaving both listed is harmless.
+  -->
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
@@ -40,9 +46,15 @@
   <key>KeepAlive</key>
   <true/>
 
+  <!-- QC is background work; keep it off the cores the editor is using. -->
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>Nice</key>
+  <integer>5</integer>
+
   <key>StandardOutPath</key>
-  <string>/Users/edit/BurninghouseQC/qc_root/launchd.out.log</string>
+  <string>/Users/Shared/BurninghouseQC/qc_root/launchd.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/edit/BurninghouseQC/qc_root/launchd.err.log</string>
+  <string>/Users/Shared/BurninghouseQC/qc_root/launchd.err.log</string>
 </dict>
 </plist>

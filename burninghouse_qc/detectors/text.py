@@ -52,11 +52,16 @@ class SuspectWord:
 # Frame planning
 # --------------------------------------------------------------------------
 
-def scene_change_times(path: Path, cfg: TextConfig) -> list[float]:
-    """Timestamps where FFmpeg reports a scene score above the threshold.
+def parse_scene_times(stdout: str) -> list[float]:
+    """Pull scene-change timestamps out of the metadata printer's output."""
+    return [float(m.group("t")) for m in _PTS_TIME.finditer(stdout)]
 
-    Graphics almost always arrive on a cut, so these anchor the dense sampling.
-    A failure here is non-fatal — we fall back to interval sampling only.
+
+def scene_change_times(path: Path, cfg: TextConfig) -> list[float]:
+    """Standalone scene detection over its own decode pass.
+
+    The pipeline gets these from scan.scan_video, which shares one pass with
+    black detection. This entry point stays for one-off use and for the tests.
     """
     proc = ffmpeg(
         [
@@ -67,42 +72,119 @@ def scene_change_times(path: Path, cfg: TextConfig) -> list[float]:
     )
     if proc.returncode != 0 and not proc.stdout:
         return []
-    return [float(m.group("t")) for m in _PTS_TIME.finditer(proc.stdout)]
+    return parse_scene_times(proc.stdout)
+
+
+def effective_interval(duration: float, cfg: TextConfig) -> float:
+    """The sampling interval actually used, widened to respect max_frames.
+
+    Widening the interval rather than thinning a too-long list afterwards keeps
+    the grid evenly spaced, which is what lets the whole baseline be pulled in
+    a single FFmpeg pass.
+    """
+    if duration <= 0:
+        return max(0.1, cfg.sample_interval)
+    # Leave room in the budget for the extra frames taken around scene changes.
+    budget = max(1, int(cfg.max_frames * 0.8))
+    return max(0.1, cfg.sample_interval, duration / budget)
 
 
 def plan_timestamps(duration: float, scene_times: list[float], cfg: TextConfig) -> list[float]:
-    """Merge baseline interval sampling with denser coverage after each cut."""
+    """The full sampling plan: the baseline grid plus post-cut follow-ups."""
     if duration <= 0:
         return []
+    grid = grid_timestamps(duration, cfg)
+    followups = followup_timestamps(duration, scene_times, grid, cfg)
+    merged = sorted(grid + followups)
+    return _space_out(merged, cfg.min_frame_gap)[: cfg.max_frames]
 
+
+def grid_timestamps(duration: float, cfg: TextConfig) -> list[float]:
+    """Evenly spaced baseline samples covering the whole programme."""
+    if duration <= 0:
+        return []
+    step = effective_interval(duration, cfg)
+    count = int(duration / step) + 1
+    return [round(i * step, 3) for i in range(count) if i * step < duration]
+
+
+def followup_timestamps(
+    duration: float, scene_times: list[float], grid: list[float], cfg: TextConfig
+) -> list[float]:
+    """Extra samples just after each cut, where supers tend to animate on."""
+    if duration <= 0 or not scene_times:
+        return []
+    budget = max(0, cfg.max_frames - len(grid))
     candidates: list[float] = []
-    step = max(0.1, cfg.sample_interval)
-    t = 0.0
-    while t < duration:
-        candidates.append(t)
-        t += step
-
     for scene_t in scene_times:
         for offset in cfg.scene_followup_offsets:
-            candidate = scene_t + offset
+            candidate = round(scene_t + offset, 3)
             if 0.0 <= candidate < duration:
                 candidates.append(candidate)
-
     candidates.sort()
-    spaced: list[float] = []
-    for candidate in candidates:
-        if not spaced or candidate - spaced[-1] >= cfg.min_frame_gap:
-            spaced.append(round(candidate, 3))
+    # Drop any that a grid sample already covers, then spread what is left
+    # evenly across the clip so a burst of cuts early on cannot eat the budget.
+    wanted = [t for t in candidates if _gap_to_nearest(t, grid) >= cfg.min_frame_gap]
+    wanted = _space_out(wanted, cfg.min_frame_gap)
+    if len(wanted) > budget:
+        stride = len(wanted) / budget if budget else 0
+        wanted = [wanted[int(i * stride)] for i in range(budget)]
+    return wanted
 
-    if len(spaced) > cfg.max_frames:
-        # Thin evenly rather than truncating, so coverage stays spread over the
-        # whole programme instead of stopping partway through.
-        stride = len(spaced) / cfg.max_frames
-        spaced = [spaced[int(i * stride)] for i in range(cfg.max_frames)]
+
+def _gap_to_nearest(value: float, sorted_values: list[float]) -> float:
+    if not sorted_values:
+        return float("inf")
+    import bisect
+
+    index = bisect.bisect_left(sorted_values, value)
+    gaps = []
+    if index < len(sorted_values):
+        gaps.append(abs(sorted_values[index] - value))
+    if index:
+        gaps.append(abs(value - sorted_values[index - 1]))
+    return min(gaps)
+
+
+def _space_out(values: list[float], min_gap: float) -> list[float]:
+    spaced: list[float] = []
+    for value in values:
+        if not spaced or value - spaced[-1] >= min_gap:
+            spaced.append(value)
     return spaced
 
 
+def extract_grid(path: Path, duration: float, workdir: Path, cfg: TextConfig) -> list[SampledFrame]:
+    """Pull the whole baseline grid in ONE decode pass via the fps filter.
+
+    Seeking to each timestamp separately costs ~0.4s per frame on a 1080p
+    master; a single pass gets the same frames for roughly the price of one
+    decode. Output frame *i* corresponds to *i x interval* seconds.
+    """
+    workdir.mkdir(parents=True, exist_ok=True)
+    step = effective_interval(duration, cfg)
+    pattern = workdir / "grid_%05d.png"
+    proc = ffmpeg(
+        [
+            "-i", str(path),
+            "-vf", f"fps=1/{step}",
+            "-vsync", "0",
+            "-y", str(pattern),
+        ]
+    )
+    frames: list[SampledFrame] = []
+    for index, frame_path in enumerate(sorted(workdir.glob("grid_*.png"))):
+        if frame_path.stat().st_size == 0:
+            continue
+        frames.append(SampledFrame(timestamp=round(index * step, 3), path=frame_path))
+    if proc.returncode != 0 and not frames:
+        return []
+    return frames
+
+
 def extract_frames(path: Path, timestamps: list[float], workdir: Path) -> list[SampledFrame]:
+    """Seek-and-grab individual frames. Used for the handful of follow-up
+    samples around cuts, which do not sit on the baseline grid."""
     workdir.mkdir(parents=True, exist_ok=True)
     frames: list[SampledFrame] = []
     for index, timestamp in enumerate(timestamps):
@@ -125,14 +207,20 @@ def extract_frames(path: Path, timestamps: list[float], workdir: Path) -> list[S
 # OCR
 # --------------------------------------------------------------------------
 
+def ocr_scale(height: int, cfg: TextConfig) -> float:
+    """How much to rescale a frame of this height before handing it to OCR."""
+    if height <= 0:
+        return 1.0
+    scale = cfg.ocr_target_height / height
+    return max(cfg.ocr_min_scale, min(cfg.ocr_max_scale, scale))
+
+
 def prepare_for_ocr(image: Image.Image, cfg: TextConfig) -> Image.Image:
-    """Grayscale + upscale + autocontrast. Small burnt-in type reads far better."""
+    """Grayscale + rescale + autocontrast. Small burnt-in type reads far better."""
     prepared = ImageOps.grayscale(image)
-    if cfg.ocr_upscale and cfg.ocr_upscale != 1.0:
-        size = (
-            max(1, int(prepared.width * cfg.ocr_upscale)),
-            max(1, int(prepared.height * cfg.ocr_upscale)),
-        )
+    scale = ocr_scale(prepared.height, cfg)
+    if scale != 1.0:
+        size = (max(1, round(prepared.width * scale)), max(1, round(prepared.height * scale)))
         prepared = prepared.resize(size, Image.LANCZOS)
     return ImageOps.autocontrast(prepared)
 
@@ -140,7 +228,7 @@ def prepare_for_ocr(image: Image.Image, cfg: TextConfig) -> Image.Image:
 def ocr_frame(frame_path: Path, cfg: TextConfig) -> list[OcrWord]:
     with Image.open(frame_path) as image:
         image.load()
-        scale = cfg.ocr_upscale or 1.0
+        scale = ocr_scale(image.height, cfg)
         prepared = prepare_for_ocr(image, cfg)
         data = pytesseract.image_to_data(
             prepared,
@@ -267,9 +355,14 @@ def detect(
     workdir: Path,
     cfg: TextConfig,
     speller: Speller,
+    scene_times: list[float] | None = None,
 ) -> tuple[list[Finding], dict]:
-    """Returns (findings, stats). Stats feed the report's coverage section."""
-    stats = {"frames_sampled": 0, "scene_changes": 0, "words_read": 0}
+    """Returns (findings, stats). Stats feed the report's coverage section.
+
+    `scene_times` comes from the shared single-pass scan when the pipeline
+    calls this; passing None makes it run its own scene detection.
+    """
+    stats = {"frames_sampled": 0, "scene_changes": 0, "words_read": 0, "sample_interval": None}
     if not cfg.enabled:
         return [], stats
     if not has_video:
@@ -286,9 +379,17 @@ def detect(
             stats,
         )
 
-    scene_times = scene_change_times(path, cfg)
-    timestamps = plan_timestamps(duration, scene_times, cfg)
-    frames = extract_frames(path, timestamps, workdir / "frames")
+    if scene_times is None:
+        scene_times = scene_change_times(path, cfg)
+
+    # The evenly spaced baseline comes out of one decode pass; only the handful
+    # of post-cut follow-ups need individual seeks.
+    frames = extract_grid(path, duration, workdir / "frames", cfg)
+    grid_stamps = [f.timestamp for f in frames]
+    followups = followup_timestamps(duration, scene_times, grid_stamps, cfg)
+    frames += extract_frames(path, followups, workdir / "frames")
+    frames.sort(key=lambda f: f.timestamp)
+    frames = frames[: cfg.max_frames]
 
     for frame in frames:
         frame.words = ocr_frame(frame.path, cfg)
@@ -296,6 +397,7 @@ def detect(
     stats["frames_sampled"] = len(frames)
     stats["scene_changes"] = len(scene_times)
     stats["words_read"] = sum(len(f.words) for f in frames)
+    stats["sample_interval"] = round(effective_interval(duration, cfg), 3)
 
     findings: list[Finding] = []
     for suspect in collect_suspects(frames, speller, cfg):

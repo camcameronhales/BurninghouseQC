@@ -11,7 +11,7 @@ from burninghouse_qc.stability import is_candidate, wait_until_stable
     [
         ("master.mov", True),
         ("master.MP4", True),
-        ("master.mxf", True),
+        ("master.mxf", False),          # not a house delivery format by default
         ("master.mov.tmp", False),      # still being written
         ("master.part", False),
         ("notes.txt", False),
@@ -22,6 +22,12 @@ from burninghouse_qc.stability import is_candidate, wait_until_stable
 )
 def test_is_candidate(tmp_path, name, expected):
     assert is_candidate(tmp_path / name, WatcherConfig()) is expected
+
+
+def test_extra_formats_are_one_config_line_away(tmp_path):
+    """mp4/mov are the house formats; anything FFmpeg reads can be added."""
+    cfg = WatcherConfig(video_extensions=[".mov", ".mp4", ".mxf"])
+    assert is_candidate(tmp_path / "master.mxf", cfg) is True
 
 
 class FakeClock:

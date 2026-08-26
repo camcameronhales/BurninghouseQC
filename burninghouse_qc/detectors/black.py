@@ -65,32 +65,21 @@ def classify(run: BlackRun, media_duration: float, cfg: BlackConfig) -> tuple[Se
     )
 
 
-def detect(path: Path, media_duration: float, cfg: BlackConfig) -> list[Finding]:
-    if not cfg.enabled:
-        return []
-
-    filter_spec = (
-        f"blackdetect=d={cfg.min_duration}"
-        f":pix_th={cfg.pixel_threshold}"
-        f":pic_th={cfg.picture_threshold}"
+def detector_error(stderr: str = "") -> Finding:
+    return Finding(
+        detector="black",
+        kind="detector_error",
+        severity=Severity.REVIEW,
+        message="Black frame detection could not complete; check the file manually.",
+        detail={"stderr": stderr.strip()[-500:]},
     )
-    proc = ffmpeg(
-        ["-i", str(path), "-vf", filter_spec, "-an", "-f", "null", "-"],
-    )
-    # blackdetect writes to stderr; a non-zero exit with usable output still
-    # yields findings, so only the empty case is treated as an error.
-    runs = parse_blackdetect(proc.stderr)
-    if proc.returncode != 0 and not runs:
-        return [
-            Finding(
-                detector="black",
-                kind="detector_error",
-                severity=Severity.REVIEW,
-                message="Black frame detection could not complete; check the file manually.",
-                detail={"stderr": proc.stderr.strip()[-500:]},
-            )
-        ]
 
+
+def findings_from_runs(
+    runs: list[BlackRun], media_duration: float, cfg: BlackConfig
+) -> list[Finding]:
+    """Turn parsed black runs into findings. The pipeline calls this with runs
+    from the shared single-pass scan; `detect` below is the standalone path."""
     findings: list[Finding] = []
     for run in runs:
         severity, message = classify(run, media_duration, cfg)
@@ -107,3 +96,26 @@ def detect(path: Path, media_duration: float, cfg: BlackConfig) -> list[Finding]
             )
         )
     return findings
+
+
+def detect(path: Path, media_duration: float, cfg: BlackConfig) -> list[Finding]:
+    """Standalone black detection over its own decode pass.
+
+    The pipeline uses scan.scan_video instead, which shares one pass with scene
+    detection. This entry point stays for one-off use and for the tests.
+    """
+    if not cfg.enabled:
+        return []
+
+    filter_spec = (
+        f"blackdetect=d={cfg.min_duration}"
+        f":pix_th={cfg.pixel_threshold}"
+        f":pic_th={cfg.picture_threshold}"
+    )
+    proc = ffmpeg(["-i", str(path), "-vf", filter_spec, "-an", "-f", "null", "-"])
+    # blackdetect writes to stderr; a non-zero exit with usable output still
+    # yields findings, so only the empty case is treated as an error.
+    runs = parse_blackdetect(proc.stderr)
+    if proc.returncode != 0 and not runs:
+        return [detector_error(proc.stderr)]
+    return findings_from_runs(runs, media_duration, cfg)

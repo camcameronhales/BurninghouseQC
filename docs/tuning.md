@@ -41,6 +41,8 @@ Then classify what you find:
 | Deliberate pause failed the file | raise `silence.fail_duration` |
 | Fades flagged at the head/tail | raise `black.edge_grace` / `silence.edge_grace` |
 | Jobs take too long | raise `text.sample_interval`, or lower `text.max_frames` |
+| A short super was only flagged as *review* | lower `text.sample_interval` so it's sampled twice, or set `fail_min_occurrences = 1` |
+| Renders on a share are never noticed | `watcher.use_polling = "true"` (see service-setup.md §6) |
 
 Change **one** number at a time and re-run the same file. Changing three at
 once tells you nothing about which one mattered.
@@ -64,18 +66,25 @@ once tells you nothing about which one mattered.
   work sit on screen for under two seconds, either set this to `1` (and lean on
   `fail_confidence`) or lower `sample_interval` so short cards get sampled
   twice.
-- **`sample_interval` (2.0s)** — the thoroughness/runtime trade-off. Roughly:
-  QC time scales with the number of frames sampled. Halving this doubles the
-  frames. Scene-change sampling means you can usually leave this fairly coarse.
+- **`sample_interval` (1.5s)** — the thoroughness/runtime trade-off, and the
+  one with a real interaction: **a card must be on screen for at least
+  `sample_interval x fail_min_occurrences` to be fail-eligible.** At the
+  defaults that's 3 seconds. A super held for less than that can only ever
+  reach *review*, however clearly the OCR read it. If house style uses shorter
+  supers, lower this before touching anything else. QC time scales almost
+  linearly with the frame count, so halving it roughly doubles the runtime.
 - **`scene_threshold` (0.35)** — FFmpeg's scene-change score cut-off. Lower
   finds more cuts (more frames, slower); higher finds fewer. Worth lowering for
   slow, graded, low-contrast work where cuts score weakly.
 - **`tesseract_psm` (11)** — page segmentation mode. `11` (sparse text) suits
   burnt-in graphics scattered over a frame. Try `6` (uniform block) if the work
   is mostly full-frame title cards, and `3` for dense text like credit rolls.
-- **`ocr_upscale` (2.0)** — frames are upscaled before OCR because small type
-  reads poorly at 1:1. `3.0` helps with small lower-thirds on HD masters at the
-  cost of speed.
+- **`ocr_target_height` (1440)** — frames are rescaled to roughly this height
+  before OCR, because small type reads poorly at 1:1 but upscaling an already
+  large frame just burns time. 720p gets 2x, 1080p ~1.33x, 1440p and above are
+  left alone (`ocr_min_scale = 1.0` means never downscale, so small type in a
+  4K master is never shrunk below what Tesseract can read). Raise toward 2160
+  if small lower-thirds are being missed, at roughly quadratic cost in time.
 
 ### `[black]` and `[silence]`
 
@@ -98,6 +107,28 @@ once tells you nothing about which one mattered.
   before it's considered a finished render (default ~10s). Raise both on a slow
   network share, where writes can stall long enough to look finished.
 
+## What it costs to run
+
+Measured on a 5-minute 1080p clip with the shipped defaults: **160 seconds**,
+about 30s of QC per minute of video. A 10-minute master lands near 5 minutes.
+Roughly half of that is OCR, a quarter frame extraction, a quarter the
+black/scene decode pass.
+
+Two caveats. Those figures come from the Linux container this was built in,
+against deliberately busy synthetic footage — real graded material OCRs faster,
+and an Apple Silicon Mac will differ. **Re-measure on the actual machine early
+in the pilot**, with:
+
+```bash
+time bhqc scan "/renders/a_typical_master.mov"
+```
+
+If it turns out slower than the render itself, the order to attack it in is:
+raise `sample_interval`, then lower `ocr_target_height`, then raise
+`scene_threshold` (fewer cuts detected means fewer follow-up frames). Lowering
+`max_frames` is the blunt instrument — it caps the work but thins coverage on
+longer clips.
+
 ## Adding words to the dictionary
 
 `dictionary/custom_words.txt` — one entry per line, `#` for comments, case
@@ -115,6 +146,6 @@ jargon, and any deliberate stylisation the house uses.
 Local Tesseract is the v1 choice and it should stay that way unless the pilot
 shows it can't read your graphics — heavily stylised type, script faces, text
 over busy footage, or low-contrast grades. Before reaching for a paid API, try
-in this order: raise `ocr_upscale`, change `tesseract_psm`, then sample more
+in this order: raise `ocr_target_height`, change `tesseract_psm`, then sample more
 densely. If misses persist on frames where a person can plainly read the text,
 that's the evidence that the local engine isn't enough.

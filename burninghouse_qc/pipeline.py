@@ -12,6 +12,7 @@ from typing import Any
 
 from .config import Config
 from .detectors import black, silence, text
+from .scan import scan_video
 from .ffmpeg_tools import FFmpegError, MediaInfo, probe
 from .findings import Finding, Severity, Verdict, verdict_for
 from .spelling import Speller
@@ -122,20 +123,44 @@ def run_qc(source: Path, cfg: Config, workdir: Path | None = None) -> QCResult:
     base_dir = cfg.source_path.parent if cfg.source_path else Path.cwd()
     speller = Speller(cfg.spelling, base_dir=base_dir)
 
-    detectors: list[tuple[str, Any]] = [
-        ("black", lambda: black.detect(source, media.duration, cfg.black)),
-        ("silence", lambda: silence.detect(source, media.duration, media.has_audio, cfg.silence)),
-    ]
-    for name, runner in detectors:
+    # Black detection and scene detection share a single decode of the file.
+    scan = None
+    if media.has_video:
         try:
-            findings.extend(runner())
+            scan = scan_video(source, cfg.black, cfg.text)
+        except Exception as exc:  # noqa: BLE001
+            findings.append(_detector_crash("video scan", exc))
+
+    if cfg.black.enabled:
+        try:
+            if not media.has_video:
+                pass
+            elif scan is None or not scan.black_ok:
+                findings.append(black.detector_error(scan.stderr if scan else ""))
+            else:
+                findings.extend(
+                    black.findings_from_runs(scan.black_runs, media.duration, cfg.black)
+                )
         except Exception as exc:  # noqa: BLE001 - a broken detector must not sink the job
-            findings.append(_detector_crash(name, exc))
+            findings.append(_detector_crash("black", exc))
+
+    try:
+        findings.extend(
+            silence.detect(source, media.duration, media.has_audio, cfg.silence)
+        )
+    except Exception as exc:  # noqa: BLE001
+        findings.append(_detector_crash("silence", exc))
 
     if cfg.text.enabled:
         try:
             text_findings, text_stats = text.detect(
-                source, media.duration, media.has_video, workdir, cfg.text, speller
+                source,
+                media.duration,
+                media.has_video,
+                workdir,
+                cfg.text,
+                speller,
+                scene_times=scan.scene_times if scan and scan.scene_ok else None,
             )
             findings.extend(text_findings)
             stats.update(text_stats)

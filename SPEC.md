@@ -54,12 +54,15 @@ An automated QC pipeline that watches a folder for newly rendered video files, c
 
 ## 6. Open questions to resolve early in the build
 
-Status as of Session 2 — see the Progress Log for what changed.
+Status as of Session 3 — see the Progress Log for what changed.
 
 - **OS of the edit machine?** (Windows vs Mac — affects service/packaging approach)
-  → **STILL OPEN.** Both are covered in `docs/service-setup.md` (NSSM/Task
-  Scheduler for Windows, launchd for macOS) so this doesn't block anything, but
-  only one of them needs doing and it can't be verified until we know which.
+  → **RESOLVED: macOS 26.5.2 (25F84).** `docs/service-setup.md` is now a macOS
+  walkthrough (launchd, `launchctl bootstrap`), and the Windows launcher has
+  been dropped. Three macOS-specific behaviours were added as a result: a
+  `caffeinate` assertion held only while a job runs, automatic switching to a
+  polling watcher when the input folder is on an SMB/AFP share (FSEvents does
+  not fire for those), and Full Disk Access guidance.
 - **Pass/review/fail thresholds**: exact confidence cutoffs for what counts as "borderline" (→ review) vs "clear-cut" (→ fail) will need tuning once real OCR/detection output is seen — treat initial thresholds as a first guess to be adjusted during piloting.
   → **First guesses implemented and documented.** Every threshold lives in
   `config.toml`; `docs/tuning.md` is the pilot playbook for adjusting them.
@@ -68,20 +71,23 @@ Status as of Session 2 — see the Progress Log for what changed.
   `#` comments, re-read on every job so edits need no restart. **Who owns it is
   still open.**
 - **File formats**: what video formats/codecs need to be supported (ProRes, H.264, etc.)?
-  → **Partly answered by the design:** anything FFmpeg can decode works. The
-  watcher's `video_extensions` list is what actually gates pick-up, and
-  currently covers `.mov .mp4 .mxf .m4v .avi .mkv .webm`. Still worth
-  confirming what actually comes out of the render queue.
+  → **RESOLVED: mp4 and mov.** `watcher.video_extensions` now defaults to
+  `[".mov", ".mp4"]` so nothing else is picked up by accident. Anything FFmpeg
+  decodes still works — adding a format is one line of config.
 - **Report format preference**: HTML (easy, viewable in browser) vs PDF (easier to send/archive)?
   → **Resolved: HTML**, built self-contained (thumbnails embedded as base64) so
   it emails and archives like a single file, with a print stylesheet so the
   browser exports a clean PDF when one is wanted. A `.qc.json` sidecar carries
   the same data for scripting.
 - **Frame sampling rate** for OCR: trade-off between thoroughness and processing time — needs tuning against typical video length.
-  → **Implemented as interval + scene-change sampling** with a `max_frames`
-  ceiling. Default 2s interval plus extra frames after each detected cut.
-  Measured ~9s of QC for a 16s 720p clip; needs re-measuring against a real
-  long-form master.
+  → **RESOLVED against the confirmed 2-10 minute clip length.** Interval
+  lowered to **1.5s** with `max_frames` raised to **600**, so the full cadence
+  fits a 10-minute clip without widening. 1.5s is not arbitrary: a card must be
+  on screen for `sample_interval x fail_min_occurrences` (3s) to be
+  fail-eligible, and shorter supers can only reach review.
+  Measured **160s for a 5-minute 1080p clip** (~30s of QC per minute of video),
+  after optimisation work that halved it. Still needs re-measuring on the
+  actual Mac against real footage.
 
 ## 7. Explicitly out of scope for v1
 
@@ -164,3 +170,65 @@ Pipeline and service (steps 2–5):
 **Stretch items still unstarted** (all one new file in `detectors/`): frozen
 frame detection (`freezedetect`), loudness (`ebur128`), resolution/aspect
 mismatch, flash frames. SQLite job history remains a v2 item.
+
+### Session 3 — 2026-08-26
+
+Answered the three outstanding questions: **macOS 26.5.2 (25F84)**, clips
+**2–10 minutes**, formats **mp4 and mov**. All three changed real decisions.
+
+**Performance work, driven by the clip length.** A 10-minute 1080p master was
+projected at ~8 minutes of QC, which was too slow to sit comfortably in an
+unattended workflow. Three changes, each measured:
+
+- `scan.py` — black detection and scene detection now share **one decode pass**
+  instead of walking the file twice (`blackdetect` sits ahead of `select` in the
+  filter chain, so it still sees every frame). 36s → 21s on a 5-minute clip.
+- The baseline sample grid is pulled in **one FFmpeg pass** via the `fps`
+  filter instead of one seek per frame. 0.42s/frame → 0.11s/frame.
+- OCR input is **normalised to ~1440px tall** rather than blindly upscaled 2x.
+  720p still gets 2x; 1080p now gets 1.33x instead of being blown up to 4K for
+  no accuracy gain. 0.92s/frame → 0.53s/frame.
+
+Net: a 5-minute 1080p clip went **244s → 160s while sampling more frames**
+(202 vs 154). Detection was unchanged — all three planted faults still found,
+and ~35 filler title cards across the clip produced zero false positives.
+
+Sampling was then retuned for the confirmed clip length: interval 2.0s → 1.5s,
+`max_frames` 400 → 600. `plan_timestamps` now widens the interval when a clip
+would blow the frame budget, instead of thinning a too-long list — which keeps
+the grid evenly spaced and is what makes the single-pass extraction possible.
+
+**macOS work:**
+- `power.py` — holds a `caffeinate` assertion for the duration of each job so an
+  idle machine can't sleep mid-QC, and releases it while idle so the Mac still
+  sleeps normally between renders.
+- `mounts.py` — detects an SMB/AFP/NFS input folder and switches the watcher to
+  polling. FSEvents does not fire for network mounts, so without this a render
+  dropped on a NAS would sit in the input folder forever. Overridable via
+  `watcher.use_polling`.
+- `docs/service-setup.md` rewritten as a macOS walkthrough: modern
+  `launchctl bootstrap`/`bootout`/`kickstart` (not the deprecated `load -w`),
+  the LaunchAgent-vs-LaunchDaemon trade-off (a daemon can't see user-mounted
+  shares), launchd's missing `PATH`, and Full Disk Access.
+- `service/run-qc.bat` deleted; Windows scoped out. Nothing in the app is
+  macOS-only — only the service wrapper would need rewriting.
+
+**Also:** `video_extensions` narrowed to `.mov`/`.mp4`; the stray "How" left at
+the end of the pasted brief removed.
+
+**Tested:** 130 tests passing (up from 99), including new coverage for network
+mount detection, the power assertion releasing on exception, OCR scale
+normalisation, and the sampling budget under a cut-heavy clip.
+
+**What's left:**
+1. **Install on the actual Mac** and run `bhqc doctor` there — everything is
+   written, none of it has run on macOS.
+2. **Pilot on real render output** alongside the existing manual QC, and tune
+   with `docs/tuning.md`. The thresholds have still only ever seen synthetic
+   footage.
+3. **Re-measure runtime on the real machine.** All figures above come from the
+   Linux container this was built in, against deliberately busy synthetic
+   footage. Apple Silicon and real graded material will both differ.
+4. Decide who owns the custom dictionary.
+5. Confirm whether renders land on a local disk or a share — it decides
+   LaunchAgent vs LaunchDaemon, and whether the polling watcher kicks in.

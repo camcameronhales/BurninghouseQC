@@ -11,13 +11,17 @@ from __future__ import annotations
 import queue
 import threading
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 
 from .config import Config
+from .mounts import device_for, should_poll
 from .pipeline import cleanup_workdir, run_qc
+from .power import keep_awake
 from .router import route
 from .stability import is_candidate, wait_until_stable
 from .status import StatusFile, setup_logging
@@ -83,8 +87,11 @@ class QCService:
 
             self.logger.info("QC started: %s", path.name)
             self.status.update(state="processing", current_file=path.name)
-            result = run_qc(path, self.cfg)
-            outcome = route(result, self.cfg)
+            # Hold the machine awake only while the job actually runs.
+            awake = keep_awake(self.logger) if self.cfg.watcher.prevent_sleep else nullcontext()
+            with awake:
+                result = run_qc(path, self.cfg)
+                outcome = route(result, self.cfg)
             counts = result.counts()
             self.logger.info(
                 "QC finished: %s -> %s (%d fail, %d review) in %.1fs | report: %s",
@@ -130,7 +137,7 @@ class QCService:
         worker = threading.Thread(target=self._worker, name="qc-worker", daemon=True)
         worker.start()
 
-        observer = Observer()
+        observer = self._build_observer()
         observer.schedule(
             _InputHandler(self.queue, self.cfg, self.logger),
             str(self.cfg.paths.input),
@@ -150,6 +157,22 @@ class QCService:
             observer.join(timeout=5)
             worker.join(timeout=5)
             self.status.update(state="stopped", current_file=None)
+
+    def _build_observer(self):
+        """FSEvents where it works, polling where it does not.
+
+        A network-mounted input folder gets no FSEvents on macOS, so a render
+        dropped on a NAS share would never be noticed. Polling is slower to
+        react but always fires.
+        """
+        if should_poll(self.cfg.paths.input, self.cfg.watcher.use_polling):
+            self.logger.info(
+                "Input folder is on %s — using the polling watcher (every %.0fs)",
+                device_for(self.cfg.paths.input) or "a network mount",
+                self.cfg.watcher.polling_interval,
+            )
+            return PollingObserver(timeout=self.cfg.watcher.polling_interval)
+        return Observer()
 
     def stop(self) -> None:
         self._stop.set()

@@ -9,7 +9,12 @@ on a real render. Produces a clip with:
   * a sustained mid-programme black run
   * a mid-programme audio dropout
 
-Usage:  python scripts/make_sample.py out.mp4 [--clean]
+Usage:
+    python scripts/make_sample.py out.mp4 [--clean]
+    python scripts/make_sample.py long.mp4 --duration 300 --size 1920x1080
+
+`--duration` repeats the title cards across the whole clip, which is how the
+benchmark material for real-world 2-10 minute deliverables is made.
 """
 
 from __future__ import annotations
@@ -43,6 +48,17 @@ DURATION = 16.0
 BLACK_FROM, BLACK_TO = 9.0, 11.0      # sustained mid-programme black
 SILENT_FROM, SILENT_TO = 4.0, 9.0     # mid-programme audio dropout
 
+# Extra copy cycled through longer clips so a 5-minute benchmark carries a
+# realistic amount of on-screen text rather than three cards and silence.
+FILLER = [
+    "Directed by Sam Whitfield",
+    "Shot on location in Melbourne",
+    "Grading by the Burninghouse colour suite",
+    "A short film about patience",
+    "Produced for broadcast delivery",
+    "Sound design and final mix",
+]
+
 
 def find_font() -> str:
     for candidate in FONT_CANDIDATES:
@@ -55,8 +71,20 @@ def escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
 
-def build(out: Path, clean: bool, font: str) -> None:
-    cards = CARDS_CLEAN if clean else CARDS_FAULTY
+def cards_for(duration: float, clean: bool) -> list[tuple[float, float, str]]:
+    """Base cards, then filler copy repeated to fill a longer clip."""
+    cards = list(CARDS_CLEAN if clean else CARDS_FAULTY)
+    start = DURATION
+    index = 0
+    while start + 4.0 < duration:
+        cards.append((start, start + 4.0, FILLER[index % len(FILLER)]))
+        start += 8.0
+        index += 1
+    return cards
+
+
+def build(out: Path, clean: bool, font: str, duration: float, size: str) -> None:
+    cards = cards_for(duration, clean)
     filters = [
         # A mid-grey base with a moving element so scene detection has something
         # to work with, then the title cards burnt in.
@@ -89,13 +117,13 @@ def build(out: Path, clean: bool, font: str) -> None:
 
     args = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-f", "lavfi", "-i", f"testsrc2=size=1280x720:rate=25:duration={DURATION}",
-        "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={DURATION}",
+        "-f", "lavfi", "-i", f"testsrc2=size={size}:rate=25:duration={duration}",
+        "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={duration}",
         "-filter_complex", ";".join(filters),
         "-map", "[vout]", "-map", "[aout]",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "128k",
-        "-t", str(DURATION),
+        "-t", str(duration),
         str(out),
     ]
     if not shutil.which("ffmpeg"):
@@ -111,9 +139,12 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--clean", action="store_true", help="Generate a fault-free clip.")
     parser.add_argument("--font", default=None)
+    parser.add_argument("--duration", type=float, default=DURATION,
+                        help="Clip length in seconds (default 16).")
+    parser.add_argument("--size", default="1280x720", help="e.g. 1920x1080")
     args = parser.parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    build(args.output, args.clean, args.font or find_font())
+    build(args.output, args.clean, args.font or find_font(), args.duration, args.size)
     print(f"wrote {args.output}")
 
 

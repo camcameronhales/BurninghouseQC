@@ -8,8 +8,10 @@
 # disk so you can see exactly what the OCR was looking at.
 
 [paths]
-# On Windows use forward slashes or doubled backslashes:
-#   input = "D:/Renders/QC/input"
+# Absolute paths are recommended for the installed service, e.g.
+#   input = "/Users/Shared/BurninghouseQC/qc_root/input"
+# Keep these out of ~/Desktop, ~/Documents, ~/Downloads and ~/Movies unless
+# you have granted Full Disk Access — see docs/service-setup.md §5.
 root        = "qc_root"
 input       = "qc_root/input"
 passed      = "qc_root/pass"
@@ -22,14 +24,26 @@ log_file    = "qc_root/burninghouse-qc.log"
 
 [watcher]
 # A render is only picked up once its size and mtime are unchanged across
-# `stability_checks` consecutive polls — 3 x 5s means ~10s of quiet.
+# `stability_checks` consecutive polls — 3 x 5s means ~10s of quiet. Raise both
+# if renders land over a network share, where writes can stall.
 poll_interval     = 5.0
 stability_checks  = 3
 stability_timeout = 21600          # 6h ceiling on waiting for a long render
 
 ignore_extensions = [".tmp", ".part", ".partial", ".crdownload", ".download"]
-video_extensions  = [".mov", ".mp4", ".mxf", ".m4v", ".avi", ".mkv", ".webm"]
+# House delivery formats. Anything FFmpeg decodes works if you add it here.
+video_extensions  = [".mov", ".mp4"]
+# .DS_Store, ._AppleDouble forks, and our own scratch naming.
 ignore_prefixes   = [".", "~", "_qc_"]
+
+# macOS delivers events through FSEvents, which does NOT fire for SMB/AFP
+# shares. "auto" checks the mount and switches to polling when it needs to.
+use_polling      = "auto"          # "true" forces polling, "false" forces FSEvents
+polling_interval = 5.0
+
+# Hold a caffeinate assertion while a job runs so the Mac can't sleep mid-QC.
+# Not held while idle, so the machine still sleeps normally between renders.
+prevent_sleep = true
 
 
 [black]
@@ -54,16 +68,28 @@ missing_audio = "review"           # "fail" | "review" | "ignore"
 enabled = true
 
 # Sampling. Scene changes anchor denser sampling because supers arrive on cuts.
-sample_interval         = 2.0
+#
+# At 1.5s, any card held for 3s or more is sampled at least twice — which is
+# what fail_min_occurrences needs before a misspelling can FAIL rather than
+# route to review. House clips run 2-10 minutes, which fits inside max_frames
+# at this cadence; longer clips widen the interval rather than losing coverage
+# at the end of the programme.
+sample_interval         = 1.5
 scene_threshold         = 0.35
 scene_followup_offsets  = [0.15, 0.60, 1.20]
 min_frame_gap           = 0.40
-max_frames              = 400      # ceiling per job, keeps long masters bounded
+max_frames              = 600      # ceiling per job, keeps long masters bounded
 
 # OCR
 tesseract_lang = "eng"
 tesseract_psm  = 11                # 11 = sparse text, best for burnt-in graphics
-ocr_upscale    = 2.0
+
+# Frames are rescaled to about this height before OCR: 720p is upscaled 2x,
+# 1080p ~1.33x, 1440p and above are left alone. Upscaling small type helps a
+# lot; upscaling an already-large frame just costs time.
+ocr_target_height = 1440
+ocr_min_scale     = 1.0            # 1.0 = never downscale
+ocr_max_scale     = 3.0
 
 # Confidence gates — the main false-positive control.
 min_confidence       = 70.0        # below this the token is discarded as noise
