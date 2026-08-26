@@ -1,0 +1,36 @@
+# Burninghouse QC — custom dictionary
+#
+# One entry per line. Anything listed here is treated as correctly spelled and
+# will never be flagged. Multi-word entries are allowed; each word is indexed
+# individually as well.
+#
+# Case is ignored. Lines beginning with # are comments.
+# Edit this file directly — no restart required, it is re-read for every job.
+
+# --- Studio / product names ---
+Burninghouse
+Burning House
+
+# --- Client & brand names (add as they come up) ---
+
+# --- Industry jargon / abbreviations ---
+ProRes
+timecode
+keyframe
+lavalier
+b-roll
+supers
+lower-third
+lower-thirds
+astons
+chyron
+colourist
+colourgrade
+DaVinci
+Resolve
+Premiere
+Baselight
+
+# Note: British/Australian spellings (colour, organise, centre, programme ...)
+# are handled automatically by burninghouse_qc/variants.py — you do not need to
+# list them here.

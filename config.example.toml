@@ -1,0 +1,86 @@
+# Burninghouse QC configuration
+#
+# Copy to config.toml and edit. Every relative path is resolved against the
+# folder this file lives in. Run with:  bhqc -c config.toml watch
+#
+# The thresholds below are first guesses (SPEC.md §6) — expect to adjust them
+# during the pilot. `bhqc scan FILE --keep-work` leaves the sampled frames on
+# disk so you can see exactly what the OCR was looking at.
+
+[paths]
+# On Windows use forward slashes or doubled backslashes:
+#   input = "D:/Renders/QC/input"
+root        = "qc_root"
+input       = "qc_root/input"
+passed      = "qc_root/pass"
+review      = "qc_root/review"
+error       = "qc_root/error"
+work        = "qc_root/work"
+status_file = "qc_root/status.json"
+log_file    = "qc_root/burninghouse-qc.log"
+
+
+[watcher]
+# A render is only picked up once its size and mtime are unchanged across
+# `stability_checks` consecutive polls — 3 x 5s means ~10s of quiet.
+poll_interval     = 5.0
+stability_checks  = 3
+stability_timeout = 21600          # 6h ceiling on waiting for a long render
+
+ignore_extensions = [".tmp", ".part", ".partial", ".crdownload", ".download"]
+video_extensions  = [".mov", ".mp4", ".mxf", ".m4v", ".avi", ".mkv", ".webm"]
+ignore_prefixes   = [".", "~", "_qc_"]
+
+
+[black]
+enabled           = true
+pixel_threshold   = 0.10           # ffmpeg blackdetect pix_th
+picture_threshold = 0.98           # ffmpeg blackdetect pic_th
+min_duration      = 0.10           # shortest run reported at all
+fail_duration     = 0.50           # >= this, mid-programme => FAIL
+edge_grace        = 1.50           # black this close to head/tail => REVIEW (fades)
+
+
+[silence]
+enabled       = true
+noise_db      = -50.0
+min_duration  = 1.0
+fail_duration = 3.0                # >= this, mid-programme => FAIL
+edge_grace    = 1.50
+missing_audio = "review"           # "fail" | "review" | "ignore"
+
+
+[text]
+enabled = true
+
+# Sampling. Scene changes anchor denser sampling because supers arrive on cuts.
+sample_interval         = 2.0
+scene_threshold         = 0.35
+scene_followup_offsets  = [0.15, 0.60, 1.20]
+min_frame_gap           = 0.40
+max_frames              = 400      # ceiling per job, keeps long masters bounded
+
+# OCR
+tesseract_lang = "eng"
+tesseract_psm  = 11                # 11 = sparse text, best for burnt-in graphics
+ocr_upscale    = 2.0
+
+# Confidence gates — the main false-positive control.
+min_confidence       = 70.0        # below this the token is discarded as noise
+fail_confidence      = 85.0        # at/above this a misspelling can be a FAIL
+fail_min_occurrences = 2           # ...and it must appear in >= N sampled frames
+min_word_length      = 4           # shorter tokens are too noisy to trust
+
+
+[spelling]
+language                 = "en"
+custom_dictionary        = "dictionary/custom_words.txt"
+ignore_all_caps_acronyms = true
+# colour/organise/centre are accepted automatically; see burninghouse_qc/variants.py
+accept_british_spellings = true
+
+
+[report]
+thumbnail_width = 480
+max_thumbnails  = 60
+write_json      = true

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "burninghouse-qc"
+version = "0.1.0"
+description = "Automated QC for rendered video: spelling, black frames and audio dropouts"
+requires-python = ">=3.11"
+dependencies = [
+    "watchdog>=4.0",
+    "pytesseract>=0.3.10",
+    "pyspellchecker>=0.8",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+bhqc = "burninghouse_qc.cli:main"
+
+[tool.setuptools]
+packages = ["burninghouse_qc", "burninghouse_qc.detectors"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["ffmpeg: requires ffmpeg and tesseract on PATH"]

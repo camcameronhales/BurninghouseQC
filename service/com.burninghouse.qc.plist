@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Burninghouse QC — macOS launchd agent.
+
+  1. Edit the three paths below to match the install.
+  2. cp service/com.burninghouse.qc.plist ~/Library/LaunchAgents/
+  3. launchctl load -w ~/Library/LaunchAgents/com.burninghouse.qc.plist
+
+  RunAtLoad + KeepAlive means it starts at login and restarts if it ever dies.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.burninghouse.qc</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/edit/BurninghouseQC/.venv/bin/python</string>
+    <string>-m</string>
+    <string>burninghouse_qc.cli</string>
+    <string>-c</string>
+    <string>/Users/edit/BurninghouseQC/config.toml</string>
+    <string>watch</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/edit/BurninghouseQC</string>
+
+  <!-- Homebrew installs ffmpeg/tesseract outside launchd's default PATH. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/edit/BurninghouseQC/qc_root/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/edit/BurninghouseQC/qc_root/launchd.err.log</string>
+</dict>
+</plist>

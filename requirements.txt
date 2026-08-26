@@ -1,0 +1,4 @@
+watchdog>=4.0
+pytesseract>=0.3.10
+pyspellchecker>=0.8
+Pillow>=10.0
