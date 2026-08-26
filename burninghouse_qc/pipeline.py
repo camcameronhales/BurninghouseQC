@@ -15,7 +15,9 @@ from .detectors import black, silence, text
 from .scan import scan_video
 from .ffmpeg_tools import FFmpegError, MediaInfo, probe
 from .findings import Finding, Severity, Verdict, verdict_for
+from .mounts import is_network_path
 from .spelling import Speller
+from .transfer import FileSnapshot, TransferError, free_space, safe_copy
 
 
 @dataclass
@@ -29,6 +31,9 @@ class QCResult:
     stats: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
     workdir: Path | None = None
+    # What the source looked like when the run started, so the router can tell
+    # whether it was rewritten underneath us.
+    snapshot: FileSnapshot | None = None
 
     @property
     def elapsed(self) -> float:
@@ -66,6 +71,36 @@ class QCResult:
         }
 
 
+def should_stage_locally(source: Path, cfg: Config) -> bool:
+    """Whether to pull a network file to local scratch before analysing it.
+
+    The detectors read the file several times over (the black/scene pass, then
+    frame extraction). Doing that across a share means several full reads and a
+    file handle held open on the server for the length of the job; one copy is
+    kinder to everyone.
+    """
+    if not cfg.routing.work_from_local_copy:
+        return False
+    try:
+        size = source.stat().st_size
+    except OSError:
+        return False
+    if size > cfg.routing.max_local_copy_gb * 1e9:
+        return False
+    if free_space(cfg.paths.work) < size * 1.2:
+        return False
+    return is_network_path(source)
+
+
+def stage_locally(source: Path, workdir: Path, cfg: Config) -> tuple[Path, str | None]:
+    """Copy the source to local scratch. Falls back to reading in place."""
+    try:
+        staged = safe_copy(source, workdir / f"_qc_source{source.suffix}")
+    except TransferError as exc:
+        return source, f"Could not stage {source.name} locally ({exc}); reading in place."
+    return staged, None
+
+
 def workdir_for(source: Path, cfg: Config) -> Path:
     stamp = time.strftime("%Y%m%d-%H%M%S")
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in source.stem)[:60]
@@ -77,14 +112,24 @@ def run_qc(source: Path, cfg: Config, workdir: Path | None = None) -> QCResult:
     started = datetime.now(timezone.utc)
     workdir = workdir or workdir_for(source, cfg)
     workdir.mkdir(parents=True, exist_ok=True)
+    snapshot = FileSnapshot.of(source)
 
     findings: list[Finding] = []
     stats: dict[str, Any] = {}
     media: MediaInfo | None = None
     error: str | None = None
 
+    # Everything below reads `analysis_source`; `source` stays the real file so
+    # the report and the router always refer to the original.
+    analysis_source = source
+    if should_stage_locally(source, cfg):
+        analysis_source, stage_warning = stage_locally(source, workdir, cfg)
+        stats["staged_locally"] = analysis_source is not source
+        if stage_warning:
+            stats["staging_note"] = stage_warning
+
     try:
-        media = probe(source)
+        media = probe(analysis_source)
     except FFmpegError as exc:
         error = str(exc)
         findings.append(
@@ -107,6 +152,7 @@ def run_qc(source: Path, cfg: Config, workdir: Path | None = None) -> QCResult:
             stats=stats,
             error=error,
             workdir=workdir,
+            snapshot=snapshot,
         )
 
     if media.duration <= 0:
@@ -127,7 +173,7 @@ def run_qc(source: Path, cfg: Config, workdir: Path | None = None) -> QCResult:
     scan = None
     if media.has_video:
         try:
-            scan = scan_video(source, cfg.black, cfg.text)
+            scan = scan_video(analysis_source, cfg.black, cfg.text)
         except Exception as exc:  # noqa: BLE001
             findings.append(_detector_crash("video scan", exc))
 
@@ -146,7 +192,7 @@ def run_qc(source: Path, cfg: Config, workdir: Path | None = None) -> QCResult:
 
     try:
         findings.extend(
-            silence.detect(source, media.duration, media.has_audio, cfg.silence)
+            silence.detect(analysis_source, media.duration, media.has_audio, cfg.silence)
         )
     except Exception as exc:  # noqa: BLE001
         findings.append(_detector_crash("silence", exc))
@@ -154,7 +200,7 @@ def run_qc(source: Path, cfg: Config, workdir: Path | None = None) -> QCResult:
     if cfg.text.enabled:
         try:
             text_findings, text_stats = text.detect(
-                source,
+                analysis_source,
                 media.duration,
                 media.has_video,
                 workdir,
@@ -182,6 +228,7 @@ def run_qc(source: Path, cfg: Config, workdir: Path | None = None) -> QCResult:
         stats=stats,
         error=error,
         workdir=workdir,
+        snapshot=snapshot,
     )
 
 

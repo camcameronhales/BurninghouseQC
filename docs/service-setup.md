@@ -134,6 +134,13 @@ binary.
 
 ## 6. If renders land on a NAS or SMB share
 
+Read **[`server-safety.md`](server-safety.md)** first — it covers what the app
+does and does not write, and why the default mode leaves the share alone. The
+single most useful thing you can do is give the account this service runs as
+**read-only** access to the renders share, and full access only to the local QC
+folder. Then no bug can write to the server, whatever the config says.
+
+
 macOS delivers filesystem events through FSEvents, which **does not fire for
 SMB or AFP mounts**. A render dropped onto a share would otherwise sit in the
 input folder forever.

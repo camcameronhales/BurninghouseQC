@@ -1,8 +1,22 @@
-"""Moves a checked file into pass / review / error, with its report."""
+"""Filing a checked render: the report always, the file itself only if asked.
+
+Three modes, set by `routing.mode`:
+
+  report_only  the render is never touched. The report goes to the verdict
+               folder, optionally beside a symlink pointing at the original.
+               This is the default, and the only mode that is safe to point at
+               a shared server.
+  copy         the original stays put; a verified copy lands in the verdict
+               folder.
+  move         the render is relocated into the verdict folder.
+
+In every mode the report is written first, so a transfer that fails still
+leaves an explanation behind.
+"""
 
 from __future__ import annotations
 
-import shutil
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,14 +24,29 @@ from .config import Config
 from .findings import Verdict
 from .pipeline import QCResult
 from .report import write_report
+from .transfer import FileSnapshot, TransferError, safe_copy, safe_move
+
+REPORT_ONLY = "report_only"
+COPY = "copy"
+MOVE = "move"
+VALID_MODES = (REPORT_ONLY, COPY, MOVE)
 
 
 @dataclass
 class RouteOutcome:
     verdict: Verdict
-    destination: Path       # where the video ended up
+    destination: Path       # where the render now is (unchanged in report_only)
     report: Path            # the HTML report
-    moved: bool
+    action: str             # "left_in_place" | "copied" | "moved"
+    warning: str | None = None
+
+    @property
+    def moved(self) -> bool:
+        return self.action == "moved"
+
+    @property
+    def source_untouched(self) -> bool:
+        return self.action == "left_in_place"
 
 
 def destination_dir(verdict: Verdict, cfg: Config) -> Path:
@@ -40,32 +69,120 @@ def unique_path(target: Path) -> Path:
     raise FileExistsError(f"Could not find a free name for {target}")
 
 
-def route(result: QCResult, cfg: Config, move: bool = True) -> RouteOutcome:
-    """Write the report and (optionally) relocate the source file beside it.
+def resolve_mode(cfg: Config, move: bool | None = None) -> str:
+    """`move=False` from the CLI forces report_only regardless of config."""
+    if move is False:
+        return REPORT_ONLY
+    mode = (cfg.routing.mode or REPORT_ONLY).strip().lower()
+    if mode not in VALID_MODES:
+        raise ValueError(
+            f"routing.mode must be one of {', '.join(VALID_MODES)} — got {mode!r}"
+        )
+    return mode
 
-    The report is written first: if the move fails, the operator still has an
-    explanation sitting in the destination folder.
+
+def unique_stem(target_dir: Path, stem: str, suffixes: tuple[str, ...]) -> str:
+    """A stem for which none of `suffixes` is already taken in target_dir.
+
+    Reports and their deliverable are named from the same stem, so both have to
+    be free before it can be used — otherwise a second render of the same name
+    overwrites the first one's report.
     """
+    for index in range(0, 1000):
+        candidate = stem if index == 0 else f"{stem} ({index})"
+        if not any((target_dir / f"{candidate}{suffix}").exists() for suffix in suffixes):
+            return candidate
+    raise FileExistsError(f"Could not find a free name for {stem} in {target_dir}")
+
+
+def _place_symlink(source: Path, target_dir: Path, stem: str) -> str | None:
+    """Best-effort pointer to the original. Never fatal — it is a convenience."""
+    link = target_dir / f"{stem}{source.suffix}"
+    if link.exists() or link.is_symlink():
+        return None
+    try:
+        os.symlink(source, link)
+    except OSError as exc:
+        return f"Could not create a shortcut to {source.name}: {exc}"
+    return None
+
+
+def route(
+    result: QCResult,
+    cfg: Config,
+    move: bool | None = None,
+    source_snapshot: FileSnapshot | None = None,
+) -> RouteOutcome:
+    """File the result. Returns where everything ended up.
+
+    `source_snapshot` is what the file looked like when QC started. If it no
+    longer matches, the render was rewritten while we were checking it, and the
+    report describes a file that no longer exists — so nothing is moved or
+    copied and the caller is warned.
+    """
+    mode = resolve_mode(cfg, move)
     target_dir = destination_dir(result.verdict, cfg)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    final_video = unique_path(target_dir / result.source.name)
-    # Report is named from the final video name so the pair always matches.
-    report_result = result
-    report_path = write_report(report_result, target_dir, cfg.report)
-    if final_video.stem != result.source.stem:
-        renamed = report_path.with_name(f"{final_video.stem}.qc.html")
-        report_path.replace(renamed)
-        report_path = renamed
-        json_sidecar = target_dir / f"{result.source.stem}.qc.json"
-        if json_sidecar.exists():
-            json_sidecar.replace(target_dir / f"{final_video.stem}.qc.json")
+    warning: str | None = None
+    if source_snapshot is not None and result.source.exists():
+        if not source_snapshot.matches(FileSnapshot.of(result.source)):
+            warning = (
+                f"{result.source.name} changed while it was being checked — this "
+                f"report describes the earlier version, and the file was left alone."
+            )
+            mode = REPORT_ONLY
 
-    moved = False
-    if move and result.source.exists():
-        shutil.move(str(result.source), str(final_video))
-        moved = True
+    if mode == REPORT_ONLY:
+        stem = unique_stem(
+            target_dir, result.source.stem, (".qc.html", result.source.suffix)
+        )
+        report_path = write_report(result, target_dir, cfg.report, stem=stem)
+        if cfg.routing.symlink_in_verdict_folder:
+            link_warning = _place_symlink(result.source, target_dir, stem)
+            warning = warning or link_warning
+        return RouteOutcome(
+            verdict=result.verdict,
+            destination=result.source,
+            report=report_path,
+            action="left_in_place",
+            warning=warning,
+        )
+
+    stem = unique_stem(target_dir, result.source.stem, (".qc.html", result.source.suffix))
+    final_video = target_dir / f"{stem}{result.source.suffix}"
+    report_path = write_report(result, target_dir, cfg.report, stem=stem)
+
+    if not result.source.exists():
+        return RouteOutcome(
+            verdict=result.verdict,
+            destination=result.source,
+            report=report_path,
+            action="left_in_place",
+            warning=f"{result.source.name} disappeared before it could be filed.",
+        )
+
+    try:
+        if mode == COPY:
+            safe_copy(result.source, final_video, verify_hash=cfg.routing.verify_hash)
+            action = "copied"
+        else:
+            safe_move(result.source, final_video, verify_hash=cfg.routing.verify_hash)
+            action = "moved"
+    except TransferError as exc:
+        # The source is intact — say what happened and leave it where it is.
+        return RouteOutcome(
+            verdict=result.verdict,
+            destination=result.source,
+            report=report_path,
+            action="left_in_place",
+            warning=str(exc),
+        )
 
     return RouteOutcome(
-        verdict=result.verdict, destination=final_video, report=report_path, moved=moved
+        verdict=result.verdict,
+        destination=final_video,
+        report=report_path,
+        action=action,
+        warning=warning,
     )

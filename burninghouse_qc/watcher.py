@@ -19,6 +19,7 @@ from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
 from .config import Config
+from .ledger import Ledger
 from .mounts import device_for, should_poll
 from .pipeline import cleanup_workdir, run_qc
 from .power import keep_awake
@@ -58,6 +59,9 @@ class QCService:
         self.keep_work = keep_work
         self.logger = setup_logging(cfg.paths.log_file, verbose=verbose)
         self.status = StatusFile(cfg.paths.status_file)
+        # In report_only mode nothing about the input folder changes when a
+        # file is done, so the ledger is what stops it being re-checked forever.
+        self.ledger = Ledger(cfg.paths.ledger_file)
         self.queue: "queue.Queue[Path]" = queue.Queue()
         self._stop = threading.Event()
         self._seen: set[Path] = set()
@@ -67,9 +71,13 @@ class QCService:
     def enqueue_existing(self) -> None:
         """Catch up on anything already sitting in /input at start-up."""
         for path in sorted(self.cfg.paths.input.iterdir()):
-            if path.is_file() and is_candidate(path, self.cfg.watcher):
-                self.logger.info("Queueing pre-existing file %s", path.name)
-                self.queue.put(path)
+            if not (path.is_file() and is_candidate(path, self.cfg.watcher)):
+                continue
+            if self.ledger.seen(path):
+                self.logger.debug("Already checked, skipping %s", path.name)
+                continue
+            self.logger.info("Queueing pre-existing file %s", path.name)
+            self.queue.put(path)
 
     # -- processing -------------------------------------------------------
     def process(self, path: Path) -> None:
@@ -78,6 +86,11 @@ class QCService:
             if resolved in self._seen:
                 return
             self._seen.add(resolved)
+        if self.ledger.seen(path):
+            self.logger.debug("Already checked, skipping %s", path.name)
+            with self._lock:
+                self._seen.discard(path.resolve())
+            return
         try:
             self.status.update(state="waiting_for_write", current_file=path.name)
             if not wait_until_stable(path, self.cfg.watcher):
@@ -91,16 +104,24 @@ class QCService:
             awake = keep_awake(self.logger) if self.cfg.watcher.prevent_sleep else nullcontext()
             with awake:
                 result = run_qc(path, self.cfg)
-                outcome = route(result, self.cfg)
+                outcome = route(result, self.cfg, source_snapshot=result.snapshot)
             counts = result.counts()
             self.logger.info(
-                "QC finished: %s -> %s (%d fail, %d review) in %.1fs | report: %s",
+                "QC finished: %s -> %s (%d fail, %d review) in %.1fs | source %s | report: %s",
                 path.name,
                 outcome.verdict.value.upper(),
                 counts["fail"],
                 counts["review"],
                 result.elapsed,
+                outcome.action.replace("_", " "),
                 outcome.report,
+            )
+            if outcome.warning:
+                self.logger.warning("%s: %s", path.name, outcome.warning)
+            # Recorded against the file wherever it ended up, so a file left in
+            # place is not picked up again on the next restart.
+            self.ledger.record(
+                outcome.destination, outcome.verdict.value, str(outcome.report)
             )
             self.status.record_result(
                 filename=path.name,

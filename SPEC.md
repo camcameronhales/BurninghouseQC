@@ -54,7 +54,7 @@ An automated QC pipeline that watches a folder for newly rendered video files, c
 
 ## 6. Open questions to resolve early in the build
 
-Status as of Session 3 — see the Progress Log for what changed.
+Status as of Session 4 — see the Progress Log for what changed.
 
 - **OS of the edit machine?** (Windows vs Mac — affects service/packaging approach)
   → **RESOLVED: macOS 26.5.2 (25F84).** `docs/service-setup.md` is now a macOS
@@ -70,6 +70,12 @@ Status as of Session 3 — see the Progress Log for what changed.
   → **Mechanism decided:** `dictionary/custom_words.txt`, one word per line,
   `#` comments, re-read on every job so edits need no restart. **Who owns it is
   still open.**
+- **Where renders live, and what the app may do to them** *(added Session 4)*
+  → **RESOLVED: a shared server, and the answer is "nothing".** Default routing
+  mode is now `report_only` — the app reads the render and files a report,
+  never writing to, moving, renaming or deleting anything in the watched
+  folder. `copy` and `move` are opt-in for a QC folder the app owns. See
+  `docs/server-safety.md`.
 - **File formats**: what video formats/codecs need to be supported (ProRes, H.264, etc.)?
   → **RESOLVED: mp4 and mov.** `watcher.video_extensions` now defaults to
   `[".mov", ".mp4"]` so nothing else is picked up by accident. Anything FFmpeg
@@ -232,3 +238,68 @@ normalisation, and the sampling budget under a cut-heavy clip.
 4. Decide who owns the custom dictionary.
 5. Confirm whether renders land on a local disk or a share — it decides
    LaunchAgent vs LaunchDaemon, and whether the polling watcher kicks in.
+
+### Session 4 — 2026-08-26
+
+Renders land on a **shared server**, and server integrity is critical. That
+inverted the app's default behaviour: v1 moved files out of the input folder,
+which is exactly wrong for storage the app does not own.
+
+**Routing is now a mode, defaulting to the safe one.**
+- `report_only` (new default) — the render is never touched. The report goes to
+  the verdict folder with a symlink pointing back at the original, so staff open
+  the file from the same place they read the report.
+- `copy` — original stays put, a verified copy is filed.
+- `move` — the old behaviour, now opt-in and documented as QC-folders-only.
+
+**`ledger.py`** — report_only leaves nothing about the input folder changed when
+a file is done, so without a record the service would re-QC the whole share on
+every restart. Files are keyed by path + size + mtime, so a re-render to the
+same name is correctly treated as new. Verified live: a restart queued nothing.
+
+**`transfer.py`** — even `move` is now defensive. Same-filesystem moves are a
+single atomic rename; cross-filesystem moves (any move off a share) copy to a
+`.qc-partial` name, verify size and optionally checksum, atomically rename, and
+only then delete the source. Any failure removes the partial and leaves the
+source intact. Plus a preflight free-space check, because filling a shared
+volume is its own outage.
+
+**Rewrite detection** — the pipeline snapshots size and mtime before QC. If the
+file changed by the time QC finishes, the render is left alone and the report is
+flagged as describing the earlier version. The app will not move a file it no
+longer understands.
+
+**Server load** — QC reads a file ~3 times (the black/scene pass, then frame
+extraction). When the input folder is on a network mount the render is now
+copied to local scratch once and analysed there, so the server sees one read
+and no file handle held open for minutes.
+
+**Also:** `bhqc scan` writes reports to `qc_root/reports/` rather than beside
+the source; the never-overwrite rule now covers reports as well as renders
+(a real bug — a second render of the same name was clobbering the first one's
+report, caught by a new test); `bhqc doctor` prints the routing mode and its
+consequence in plain words.
+
+**Tested:** 164 tests passing (up from 130). A live shared-server simulation
+QC'd two files, then restarted: source md5s and mtimes unchanged, no new files
+in the share, nothing re-queued on restart.
+
+**Recommendation on local-vs-server trials:** trial locally for **phase 1**
+(threshold tuning), because tuning means re-running the same files repeatedly
+with `--keep-work` and clearing the ledger — churn that belongs on a local disk.
+Then **phase 2** points at the real share in `report_only`, read-only, running
+alongside the manual QC. Not because the server is at risk in phase 2, but
+because the tool's behaviour is still changing in phase 1.
+
+**Belt and braces, worth doing regardless:** give the account the launchd agent
+runs as **read-only** access to the renders share and full rights only to the
+local QC folder. That makes the guarantee a filesystem property rather than a
+promise in a config file.
+
+**What's left:**
+1. **Install on the actual Mac** and run `bhqc doctor` there — still none of
+   this has run on macOS.
+2. **Phase 1 local pilot** on real render output, tuning per `docs/tuning.md`.
+3. **Re-measure runtime on the real machine** against real footage.
+4. Decide who owns the custom dictionary.
+5. Set up the read-only service account on the share before phase 2.

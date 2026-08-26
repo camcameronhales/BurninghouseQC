@@ -23,6 +23,9 @@ class Paths:
     work: Path = Path("qc_root/work")
     status_file: Path = Path("qc_root/status.json")
     log_file: Path = Path("qc_root/burninghouse-qc.log")
+    # Record of files already QC'd, so report_only mode does not re-check the
+    # whole input folder every time the service restarts.
+    ledger_file: Path = Path("qc_root/processed.json")
 
     def ensure(self) -> None:
         for d in (self.input, self.passed, self.review, self.error, self.work):
@@ -141,6 +144,36 @@ class SpellingConfig:
 
 
 @dataclass
+class RoutingConfig:
+    """What the app is allowed to do to the source file.
+
+    "report_only" is the default because renders land on a shared server, and
+    a QC tool has no business moving other people's masters around. The other
+    two modes exist for a QC folder the app owns outright.
+    """
+
+    # "report_only" — never touch the render; write the report to the verdict
+    #                 folder and leave the file exactly where it is.
+    # "copy"        — leave the original, put a verified copy in the verdict
+    #                 folder.
+    # "move"        — relocate the render into the verdict folder.
+    mode: str = "report_only"
+    # In report_only mode, also drop a symlink in the verdict folder pointing at
+    # the original, so staff can open the file from there. Best-effort.
+    symlink_in_verdict_folder: bool = True
+    # Checksum a copy against its source before trusting it. Doubles the read
+    # cost of a copy; worth it if the app is ever set to "move".
+    verify_hash: bool = False
+    # Copy the render to local scratch and analyse that instead of reading it
+    # over the network several times. One network read instead of ~3, and the
+    # server is not left with a file handle open for minutes at a time.
+    work_from_local_copy: bool = True
+    # Skip local staging if the file is larger than this (GB); it falls back to
+    # reading in place.
+    max_local_copy_gb: float = 25.0
+
+
+@dataclass
 class ReportConfig:
     # Thumbnails are embedded as base64 so a report is a single portable file.
     thumbnail_width: int = 480
@@ -157,6 +190,7 @@ class Config:
     silence: SilenceConfig = field(default_factory=SilenceConfig)
     text: TextConfig = field(default_factory=TextConfig)
     spelling: SpellingConfig = field(default_factory=SpellingConfig)
+    routing: RoutingConfig = field(default_factory=RoutingConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
     source_path: Path | None = None
 

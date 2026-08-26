@@ -20,6 +20,13 @@ prevent.
 Run the QC alongside the existing manual check for a couple of weeks — not
 instead of it — and keep a note of every disagreement.
 
+Do the tuning against **local copies** of a dozen finished renders, not against
+the server. Not because the server is at risk — the default mode never writes
+to it — but because tuning means re-running the same files over and over with
+`--keep-work`, clearing the ledger and changing thresholds, and that churn
+belongs on a local disk. See [`server-safety.md`](server-safety.md) for the
+three-phase rollout.
+
 ```bash
 # Check a file without moving it, and keep the sampled frames for inspection
 bhqc scan "/renders/Client_Spot_v3.mov" --keep-work

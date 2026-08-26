@@ -69,7 +69,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
         print(f"No such file: {source}", file=sys.stderr)
         return 2
     result = run_qc(source, cfg)
-    report_dir = Path(args.report_dir).expanduser().resolve() if args.report_dir else source.parent
+    # Deliberately NOT source.parent: scan must never write anything next to a
+    # render that may be sitting on a shared server.
+    report_dir = (
+        Path(args.report_dir).expanduser().resolve()
+        if args.report_dir
+        else cfg.paths.root / "reports"
+    )
     report_path = write_report(result, report_dir, cfg.report)
     if args.json:
         print(json.dumps(result.to_dict(), indent=2, default=str))
@@ -86,11 +92,22 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not source.exists():
         print(f"No such file: {source}", file=sys.stderr)
         return 2
+    if args.mode:
+        cfg.routing.mode = args.mode
     result = run_qc(source, cfg)
-    outcome = route(result, cfg, move=not args.no_move)
+    outcome = route(
+        result, cfg, move=False if args.no_move else None, source_snapshot=result.snapshot
+    )
     _print_result(result, outcome.report)
-    if outcome.moved:
-        print(f"  Moved to: {outcome.destination}\n")
+    described = {
+        "left_in_place": f"  Source left untouched: {outcome.destination}",
+        "copied": f"  Copied to: {outcome.destination}",
+        "moved": f"  Moved to: {outcome.destination}",
+    }[outcome.action]
+    print(described)
+    if outcome.warning:
+        print(f"  WARNING: {outcome.warning}")
+    print()
     cleanup_workdir(result.workdir, keep=args.keep_work)
     return _EXIT_CODE[result.verdict]
 
@@ -161,6 +178,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"  {'dictionary':<10} {speller.dictionary_path} "
           f"({len(speller.custom_words)} custom words{'' if exists else ', FILE MISSING'})")
 
+    mode = (cfg.routing.mode or "report_only").strip().lower()
+    consequence = {
+        "report_only": "renders are never touched; only the report is written",
+        "copy": "the original stays put; a verified copy is filed",
+        "move": "renders are RELOCATED out of the input folder",
+    }.get(mode, "UNKNOWN MODE — this will fail at routing time")
+    print(f"\n  Routing mode: {mode} — {consequence}")
+    if mode == "move":
+        print("    Only use 'move' on a QC folder this app owns, never on shared storage.")
+
     print(f"\n  Folders under {cfg.paths.root}:")
     for label, path in (
         ("input", cfg.paths.input),
@@ -192,7 +219,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_cmd = sub.add_parser("run", help="QC one file and route it")
     run_cmd.add_argument("file")
-    run_cmd.add_argument("--no-move", action="store_true", help="Write the report but leave the file")
+    run_cmd.add_argument("--no-move", action="store_true",
+                         help="Force report_only: write the report, touch nothing")
+    run_cmd.add_argument("--mode", choices=["report_only", "copy", "move"], default=None,
+                         help="Override routing.mode for this run")
     run_cmd.set_defaults(func=cmd_run)
 
     watch = sub.add_parser("watch", help="Run the folder-watching service")

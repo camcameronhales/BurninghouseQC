@@ -8,14 +8,21 @@ Built to run as a launchd background service on a single macOS edit machine —
 no UI, no server, nobody watching it.
 
 ```
-input/                       pass/    Client_Spot_v4.mp4
-  Client_Spot_v4.mp4  ──▶             Client_Spot_v4.qc.html
-  Client_Spot_v3.mp4  ──▶    error/   Client_Spot_v3.mp4
-                                      Client_Spot_v3.qc.html
+renders/  (untouched)              pass/    Client_Spot_v4.qc.html
+  Client_Spot_v4.mp4  ────────▶             Client_Spot_v4.mp4 -> (shortcut)
+  Client_Spot_v3.mp4  ────────▶    error/   Client_Spot_v3.qc.html
+                                            Client_Spot_v3.mp4 -> (shortcut)
 ```
 
 Every file gets a report, whichever folder it lands in, so staff can always see
 *why* it was routed there.
+
+> **Renders live on a shared server, so the default is read-only.** The app
+> never writes to, moves, renames or deletes anything in the watched folder —
+> it reads the render and files a *report*, leaving the file exactly where it
+> is. Moving files is opt-in and intended for a QC folder the app owns.
+> See **[`docs/server-safety.md`](docs/server-safety.md)** for exactly what
+> touches what.
 
 ---
 
@@ -127,6 +134,26 @@ together, so an in-progress render is never QC'd mid-write:
 Only `.mov` and `.mp4` are picked up by default — the house delivery formats.
 Anything FFmpeg can decode works; add its extension to `watcher.video_extensions`.
 
+### What happens to the file itself
+
+Set by `routing.mode`:
+
+| Mode | The render | Use it for |
+| --- | --- | --- |
+| **`report_only`** (default) | never touched; a report and a shortcut go to the verdict folder | shared storage — anything you don't own |
+| `copy` | original stays; a verified copy is filed | a self-contained failed-QC pile |
+| `move` | relocated into the verdict folder | a QC folder this app owns outright |
+
+Even `move` is defensive: same-filesystem moves are a single atomic rename, and
+cross-filesystem moves copy to a `.qc-partial` name, verify the size (and
+checksum, optionally), rename into place, and only then delete the original. A
+failed transfer always leaves the source intact.
+
+Three other guards apply in every mode: a preflight free-space check, a
+never-overwrite rule that suffixes `name (1)` for reports as well as renders,
+and a rewrite check — if the file changed while QC was running, it's left alone
+and the report says so.
+
 ### On a Mac specifically
 
 - **Network shares.** FSEvents doesn't fire for SMB or AFP mounts, so a render
@@ -166,6 +193,8 @@ burninghouse_qc/
   spelling.py       dictionary + custom word list + OCR-aware filtering
   variants.py       British/Australian spelling tolerance
   scan.py           one decode pass shared by black + scene detection
+  transfer.py       verified copy/move; never deletes an unverified source
+  ledger.py         what has already been checked, so nothing is re-QC'd
   mounts.py         network-share detection (FSEvents vs polling)
   power.py          caffeinate assertion held only while a job runs
   ffmpeg_tools.py   ffmpeg/ffprobe wrappers
@@ -174,7 +203,7 @@ burninghouse_qc/
     silence.py      silencedetect
     text.py         frame sampling -> OCR -> spell-check
 scripts/make_sample.py   generates test footage with known faults
-docs/                    service setup and threshold tuning
+docs/                    server safety, service setup, threshold tuning
 service/                 macOS launchd plist
 ```
 

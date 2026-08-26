@@ -207,10 +207,17 @@ def render_html(result: QCResult, cfg: ReportConfig) -> str:
 """
 
 
-def write_report(result: QCResult, destination_dir: Path, cfg: ReportConfig) -> Path:
-    """Write `<stem>.qc.html` (and optionally `.qc.json`) into destination_dir."""
+def write_report(
+    result: QCResult, destination_dir: Path, cfg: ReportConfig, stem: str | None = None
+) -> Path:
+    """Write `<stem>.qc.html` (and optionally `.qc.json`) into destination_dir.
+
+    `stem` defaults to the source filename. The router passes an explicit one
+    when a name is already taken, so reports are written straight to their
+    final name rather than being written and then renamed over each other.
+    """
     destination_dir.mkdir(parents=True, exist_ok=True)
-    stem = result.source.stem
+    stem = stem or result.source.stem
     html_path = destination_dir / f"{stem}.qc.html"
     html_path.write_text(render_html(result, cfg), encoding="utf-8")
     if cfg.write_json:
