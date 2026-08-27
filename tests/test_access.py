@@ -74,13 +74,31 @@ def test_a_read_only_share_is_reported_as_correct(cfg, monkeypatch):
     assert status_of(checks, "input folder is read-only") is Status.OK
 
 
-def test_a_writable_share_is_flagged_but_not_fatal(cfg, monkeypatch):
+def test_a_writable_network_share_is_flagged_but_not_fatal(cfg, monkeypatch):
     """Writable is a warning, not an error — the app still won't write there."""
     monkeypatch.setattr(access, "probe_write", lambda _p: (True, "writes are permitted"))
+    monkeypatch.setattr(access, "is_network_path", lambda _p: True)
     checks = check_input_folder(cfg)
     check = next(c for c in checks if c.name == "input folder is read-only")
     assert check.status is Status.WARN
     assert "guarantee" in (check.advice or "")
+
+
+def test_a_writable_local_folder_is_not_flagged_at_all(cfg, monkeypatch):
+    """Phase 1 runs against a local folder you own — writable is expected there,
+    and warning about it would just train people to ignore warnings."""
+    monkeypatch.setattr(access, "probe_write", lambda _p: (True, "writes are permitted"))
+    monkeypatch.setattr(access, "is_network_path", lambda _p: False)
+    checks = check_input_folder(cfg)
+    assert all(c.status is Status.OK for c in checks)
+    assert any(c.name == "input folder is writable" for c in checks)
+
+
+def test_a_read_only_local_folder_is_still_reported_as_read_only(cfg, monkeypatch):
+    monkeypatch.setattr(access, "probe_write", lambda _p: (False, "writes refused"))
+    monkeypatch.setattr(access, "is_network_path", lambda _p: False)
+    checks = check_input_folder(cfg)
+    assert status_of(checks, "input folder is read-only") is Status.OK
 
 
 def test_an_unreadable_share_is_fatal(cfg, monkeypatch):

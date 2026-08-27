@@ -105,14 +105,24 @@ def check_input_folder(cfg: Config, write_probe: bool = True) -> list[Check]:
         return checks
 
     wrote, detail = probe_write(path)
-    if wrote:
+    if not wrote:
+        checks.append(
+            Check(
+                name="input folder is read-only",
+                status=Status.OK,
+                detail=f"YES — {detail}",
+            )
+        )
+    elif on_network:
+        # A writable *share* is the case worth tightening: the app will not
+        # write there, but a read-only account makes that a guarantee.
         checks.append(
             Check(
                 name="input folder is read-only",
                 status=Status.WARN,
                 detail=f"NO — {detail}",
                 advice=(
-                    "The QC account can write to the renders folder. Nothing in "
+                    "The QC account can write to this share. Nothing in "
                     "report_only mode will write there, but making the share "
                     "read-only for this account turns that from a promise into a "
                     "guarantee. See docs/readonly-account.md."
@@ -120,11 +130,13 @@ def check_input_folder(cfg: Config, write_probe: bool = True) -> list[Check]:
             )
         )
     else:
+        # A writable folder on the local disk is normal and expected — it is a
+        # folder you own. Nothing to tighten.
         checks.append(
             Check(
-                name="input folder is read-only",
+                name="input folder is writable",
                 status=Status.OK,
-                detail=f"YES — {detail}",
+                detail=f"{detail} — expected for a local folder you own",
             )
         )
     return checks

@@ -17,13 +17,17 @@ renders/  (untouched)              pass/    Client_Spot_v4.qc.html
 Every file gets a report, whichever folder it lands in, so staff can always see
 *why* it was routed there.
 
-> **Renders live on a shared server, so the default is read-only.** The app
-> never writes to, moves, renames or deletes anything in the watched folder —
-> it reads the render and files a *report*, leaving the file exactly where it
-> is. Moving files is opt-in and intended for a QC folder the app owns.
-> See **[`docs/server-safety.md`](docs/server-safety.md)** for exactly what
-> touches what, and **[`docs/readonly-account.md`](docs/readonly-account.md)**
-> to make that a filesystem guarantee rather than a promise.
+> **Setting this up? Start with
+> [`docs/local-trial.md`](docs/local-trial.md)** — the step-by-step for
+> running it on one machine against local files.
+>
+> **The default never touches your renders.** The app doesn't write to, move,
+> rename or delete anything in the watched folder — it reads the render and
+> files a *report*, leaving the file where it is. Moving files is opt-in, for a
+> QC folder the app owns. When you later point it at shared storage,
+> [`docs/server-safety.md`](docs/server-safety.md) covers exactly what touches
+> what and [`docs/readonly-account.md`](docs/readonly-account.md) makes it a
+> filesystem guarantee rather than a promise.
 
 ---
 
@@ -121,7 +125,8 @@ bhqc -c config.toml check-access
 `scan` and `run` exit `0` on pass, `10` on review and `20` on fail, so they drop
 straight into a render script or a scheduled task.
 
-To install it as a launchd agent that starts on its own, see
+First time? **[`docs/local-trial.md`](docs/local-trial.md)** is the full
+step-by-step. To install it as a launchd agent that starts on its own, see
 **[`docs/service-setup.md`](docs/service-setup.md)**. That doc also covers the
 three macOS things that catch people out: launchd not inheriting your `PATH`,
 Full Disk Access for protected folders, and FSEvents not firing on SMB shares.
@@ -209,7 +214,7 @@ burninghouse_qc/
     silence.py      silencedetect
     text.py         frame sampling -> OCR -> spell-check
 scripts/make_sample.py   generates test footage with known faults
-docs/                    server safety, service setup, threshold tuning
+docs/                    local trial, service setup, tuning, server safety
 service/                 macOS launchd plist
 ```
 

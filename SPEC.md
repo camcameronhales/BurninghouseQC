@@ -54,7 +54,7 @@ An automated QC pipeline that watches a folder for newly rendered video files, c
 
 ## 6. Open questions to resolve early in the build
 
-Status as of Session 5 — see the Progress Log for what changed.
+Status as of Session 6 — see the Progress Log for what changed.
 
 - **OS of the edit machine?** (Windows vs Mac — affects service/packaging approach)
   → **RESOLVED: macOS 26.5.2 (25F84).** `docs/service-setup.md` is now a macOS
@@ -71,11 +71,16 @@ Status as of Session 5 — see the Progress Log for what changed.
   `#` comments, re-read on every job so edits need no restart. **Who owns it is
   still open.**
 - **Where renders live, and what the app may do to them** *(added Session 4)*
-  → **RESOLVED: a shared server, and the answer is "nothing".** Default routing
-  mode is now `report_only` — the app reads the render and files a report,
+  → **RESOLVED: eventually a Synology, and the answer is "nothing".** Default
+  routing mode is `report_only` — the app reads the render and files a report,
   never writing to, moving, renaming or deleting anything in the watched
-  folder. `copy` and `move` are opt-in for a QC folder the app owns. See
-  `docs/server-safety.md`.
+  folder. `copy` and `move` are opt-in for a QC folder the app owns.
+- **Deployment sequencing** *(settled Session 6)*
+  → **Phase 1 is entirely local**: files on the edit machine's own drive,
+  nothing touching the Synology, until the QC is doing what is wanted.
+  **Phase 2** points `paths.input` at the NAS — a one-line change, because
+  phase 1 runs in the same `report_only` mode that phase 2 deploys.
+  `docs/local-trial.md` is the phase 1 runbook.
 - **File formats**: what video formats/codecs need to be supported (ProRes, H.264, etc.)?
   → **RESOLVED: mp4 and mov.** `watcher.video_extensions` now defaults to
   `[".mov", ".mp4"]` so nothing else is picked up by accident. Anything FFmpeg
@@ -351,3 +356,57 @@ leaves a file behind.
 3. **Phase 1 local pilot** on real render output, tuning per `docs/tuning.md`.
 4. **Re-measure runtime on the real machine** against real footage.
 5. Decide who owns the custom dictionary.
+
+### Session 6 — 2026-08-27
+
+Corrected the deployment sequencing. Sessions 4 and 5 had run ahead to the
+Synology; the actual plan is **local first, NAS only once the QC is trusted**.
+Nothing built for the server was wasted — it is phase 2 — but several things
+assumed a share and were wrong for a local trial.
+
+**Amendments:**
+- `check-access` no longer warns that a *local* input folder is writable. It is
+  a folder you own; writable is expected there. The warning now fires only for
+  a writable **network share**, which is the case actually worth tightening.
+  Warning about the normal case just trains people to ignore warnings.
+- `bhqc init` now writes **absolute** paths. Relative paths in a config are how
+  a launchd service ends up silently watching the wrong folder, since it does
+  not inherit anyone's working directory.
+- `bhqc init` installs the custom dictionary to `<config dir>/dictionary/` and
+  points at it absolutely. **This fixed a real bug**: `custom_dictionary` was
+  resolved relative to the config file, so it broke the moment `config.toml`
+  lived anywhere but the repo root — which is exactly what a proper install
+  does. Found by rehearsing the install rather than by reading the code. It
+  also means `git pull` can no longer overwrite added brand names.
+- **`bhqc forget FILE`** / **`--all`** — clears the ledger so a file is checked
+  again. The tuning loop needs this: in `report_only` the file never leaves the
+  input folder, so without it a re-run after a threshold change does nothing.
+- `check-access`'s summary line no longer claims "read-only on the renders"
+  when the input is a writable local folder.
+
+**Decision: phase 1 trials in `report_only`, the same mode phase 2 deploys.**
+Trialling with `move` would leave the ledger and the report_only path
+completely unexercised, so the NAS would get a configuration nobody had run.
+`mode = "move"` is documented as a safe local alternative for anyone who wants
+the files physically sorted, with that trade-off stated.
+
+**`docs/local-trial.md`** — the phase 1 runbook: install, config, a
+known-answer test using generated footage with planted faults, the first real
+run, the tuning loop, and only then the service install. `server-safety.md` and
+`readonly-account.md` are now explicitly labelled phase 2.
+
+**Rehearsed the whole install end to end** in a clean directory — init, doctor,
+check-access, watcher, forget — which is how both bugs above surfaced.
+
+**Tested:** 190 tests passing (up from 179), including that the configured
+dictionary actually resolves and loads from a config outside the repo.
+
+**What's left:**
+1. **Run `docs/local-trial.md` on the Mac.** Steps 1-5 are ~20 minutes and end
+   with a known-answer test.
+2. **Phase 1 pilot** on real renders, tuning per `docs/tuning.md`.
+3. **Measure runtime on real footage** — all figures so far are synthetic
+   footage on a Linux container.
+4. Decide who owns the custom dictionary.
+5. **Phase 2** (Synology) only once phase 1 is trusted: `readonly-account.md`,
+   then change `paths.input`.

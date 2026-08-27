@@ -1,5 +1,9 @@
 # Setting up the read-only QC account
 
+> **This is phase 2 — the Synology deployment.** Skip it entirely while you are
+> trialling locally; see [`local-trial.md`](local-trial.md) for that. Come back
+> here when you are ready to point the app at the NAS.
+
 **Why bother:** the app's default mode never writes to the renders folder. This
 makes that a property of the filesystem instead of a promise in a config file.
 With a read-only account, no bug, no bad config and no future change to this

@@ -7,6 +7,7 @@
   bhqc status         Print the current service status
   bhqc doctor         Check FFmpeg/Tesseract/dictionary are all reachable
   bhqc check-access   Prove the QC account's permissions are what you think
+  bhqc forget FILE    Clear a file from the ledger so it is checked again
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from pathlib import Path
 from . import __version__
 from .access import Status, run_all
 from .config import Config
+from .ledger import Ledger
 from .findings import Verdict
 from .pipeline import cleanup_workdir, run_qc
 from .report import write_report
@@ -123,20 +125,103 @@ def cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _absolute_paths_block(cfg: Config) -> str:
+    """Render the [paths] section with absolute paths.
+
+    A launchd service does not inherit your shell's working directory, so
+    relative paths in a config are a reliable way to have it silently watch the
+    wrong folder. init always writes absolute ones.
+    """
+    entries = [
+        ("root", cfg.paths.root),
+        ("input", cfg.paths.input),
+        ("passed", cfg.paths.passed),
+        ("review", cfg.paths.review),
+        ("error", cfg.paths.error),
+        ("work", cfg.paths.work),
+        ("status_file", cfg.paths.status_file),
+        ("log_file", cfg.paths.log_file),
+        ("ledger_file", cfg.paths.ledger_file),
+    ]
+    width = max(len(name) for name, _ in entries)
+    lines = ["[paths]"]
+    lines += [f"{name.ljust(width)} = \"{path}\"" for name, path in entries]
+    return "\n".join(lines)
+
+
+def _install_dictionary(target_dir: Path) -> Path:
+    """Give the install its own copy of the custom word list.
+
+    Keeping it outside the repo means `git pull` can never overwrite the brand
+    and client names someone has added.
+    """
+    destination = target_dir / "dictionary" / "custom_words.txt"
+    if destination.exists():
+        return destination
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    bundled = Path(__file__).resolve().parent.parent / "dictionary" / "custom_words.txt"
+    if bundled.exists():
+        shutil.copyfile(bundled, destination)
+    else:  # pragma: no cover - only if the install is incomplete
+        destination.write_text(
+            "# Burninghouse QC custom dictionary — one word per line.\n", encoding="utf-8"
+        )
+    return destination
+
+
+def _render_config(template_text: str, cfg: Config, dictionary: Path) -> str:
+    """Swap the template's [paths] section for absolute ones."""
+    lines = template_text.splitlines()
+    try:
+        start = next(i for i, line in enumerate(lines) if line.strip() == "[paths]")
+    except StopIteration:
+        return _absolute_paths_block(cfg) + "\n\n" + template_text
+    end = start + 1
+    while end < len(lines) and not lines[end].lstrip().startswith("["):
+        end += 1
+    # Keep the comment block that sits above [paths].
+    rendered = "\n".join(lines[:start] + [_absolute_paths_block(cfg), ""] + lines[end:]) + "\n"
+    # The dictionary path is resolved relative to the config file, which breaks
+    # the moment the config lives somewhere other than the repo. Make it absolute.
+    return rendered.replace(
+        'custom_dictionary        = "dictionary/custom_words.txt"',
+        f'custom_dictionary        = "{dictionary}"',
+    )
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     cfg = _load(args)
+    if not getattr(args, "root", None):
+        # Default the QC root next to the config being written, resolved.
+        root = Path(args.output or "config.toml").expanduser().resolve().parent / "qc_root"
+        cfg.paths.root = root
+        cfg.paths.input = root / "input"
+        cfg.paths.passed = root / "pass"
+        cfg.paths.review = root / "review"
+        cfg.paths.error = root / "error"
+        cfg.paths.work = root / "work"
+        cfg.paths.status_file = root / "status.json"
+        cfg.paths.log_file = root / "burninghouse-qc.log"
+        cfg.paths.ledger_file = root / "processed.json"
     cfg.paths.ensure()
+
     target = Path(args.output or "config.toml").expanduser().resolve()
     template = Path(__file__).resolve().parent.parent / "config.example.toml"
     if target.exists() and not args.force:
         print(f"{target} already exists (use --force to overwrite)", file=sys.stderr)
     elif template.exists():
-        shutil.copyfile(template, target)
+        dictionary = _install_dictionary(target.parent)
+        target.write_text(
+            _render_config(template.read_text(encoding="utf-8"), cfg, dictionary),
+            encoding="utf-8",
+        )
         print(f"Wrote {target}")
+        print(f"Wrote {dictionary}  (add brand and client names here)")
     else:
         print("config.example.toml is missing from the install", file=sys.stderr)
         return 2
-    print(f"QC folders ready under {cfg.paths.root}:")
+
+    print(f"\nQC folders ready under {cfg.paths.root}:")
     for label, path in (
         ("input ", cfg.paths.input),
         ("pass  ", cfg.paths.passed),
@@ -144,6 +229,31 @@ def cmd_init(args: argparse.Namespace) -> int:
         ("error ", cfg.paths.error),
     ):
         print(f"  {label}  {path}")
+    print(f"\nDrop renders into {cfg.paths.input}")
+    print(f"Next:  bhqc -c {target} doctor")
+    return 0
+
+
+def cmd_forget(args: argparse.Namespace) -> int:
+    """Clear the ledger so a file gets checked again — the tuning loop needs it."""
+    cfg = _load(args)
+    ledger = Ledger(cfg.paths.ledger_file)
+    if args.all:
+        if cfg.paths.ledger_file.exists():
+            cfg.paths.ledger_file.unlink()
+            print(f"Cleared {cfg.paths.ledger_file} — everything will be checked again.")
+        else:
+            print("Nothing recorded yet.")
+        return 0
+    if not args.file:
+        print("Give a file, or --all to clear the whole ledger.", file=sys.stderr)
+        return 2
+    path = Path(args.file).expanduser().resolve()
+    if not ledger.seen(path):
+        print(f"{path.name} was not in the ledger (it will be checked next time anyway).")
+        return 0
+    ledger.forget(path)
+    print(f"{path.name} will be checked again.")
     return 0
 
 
@@ -240,8 +350,14 @@ def cmd_check_access(args: argparse.Namespace) -> int:
     if warnings:
         print(f"  Usable, with {len(warnings)} thing(s) worth tightening.\n")
         return 0
-    print("  All good — the account has read-only access to the renders and full\n"
-          "  access to its own folders.\n")
+
+    read_only_input = any(
+        c.name == "input folder is read-only" and c.status is Status.OK for c in checks
+    )
+    if read_only_input:
+        print("  All good — read-only on the renders, full access to its own folders.\n")
+    else:
+        print("  All good — the input folder and the QC folders are all usable.\n")
     return 0
 
 
@@ -306,6 +422,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not attempt a test write in the input folder (skips the read-only check)",
     )
     access.set_defaults(func=cmd_check_access)
+
+    forget = sub.add_parser(
+        "forget", help="Clear a file (or everything) from the ledger so it is re-checked"
+    )
+    forget.add_argument("file", nargs="?", default=None)
+    forget.add_argument("--all", action="store_true", help="Clear the whole ledger")
+    forget.set_defaults(func=cmd_forget)
     return parser
 
 

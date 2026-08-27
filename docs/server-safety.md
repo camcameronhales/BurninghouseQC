@@ -108,29 +108,26 @@ max_local_copy_gb    = 25.0      # bigger than this, read in place
 It falls back to reading in place if local disk is short. A 10-minute 1080p
 master is a few GB, so a modest scratch allowance covers the house case.
 
-## Recommended rollout
+## Rollout
 
-You asked whether to trial locally first. **Yes — but for tuning reasons, not
-because the server is at risk.**
+**This document is about phase 2.** Phase 1 is entirely local and does not
+involve the server at all — see **[`local-trial.md`](local-trial.md)**.
 
-**Phase 1 — local, while thresholds are being tuned.** Copy a dozen finished
-renders to a local folder and point the app at that. During tuning you will be
-re-running the same files repeatedly with `--keep-work`, deleting reports,
-clearing the ledger and changing thresholds. That churn belongs on a local
-disk, and it keeps the server out of a phase where the tool's behaviour is
-still changing.
+**Phase 1 — local only.** Renders on the Mac's own drive, in a folder the app
+owns. Prove the QC does what you want and tune the thresholds. Nothing touches
+the NAS. This is where the tool earns trust, and it is where the churn belongs:
+re-running the same files with `--keep-work`, clearing the ledger, changing
+thresholds.
 
-```bash
-bhqc -c config.toml scan "/Users/Shared/qc-trial/a_typical_master.mov" --keep-work
-```
-
-**Phase 2 — read-only against the server.** Point `paths.input` at the real
-share with `mode = "report_only"`. The app reads and reports; the server is
-untouched. Run this alongside the existing manual QC for a couple of weeks and
+**Phase 2 — read-only against the Synology.** Change one line — `paths.input` —
+and point it at the share. `mode = "report_only"` is unchanged, because phase 1
+was run in the same mode, so nothing about the app's behaviour is new. Add a
+read-only account ([`readonly-account.md`](readonly-account.md)) so the NAS
+enforces what the config already promises. Run alongside the manual QC and
 compare verdicts.
 
-**Phase 3 — only if you want it.** Once the verdicts are trusted, you *could*
-move to `copy` for a self-contained failed-QC pile. There is no strong reason to
+**Phase 3 — only if you want it.** Once the verdicts are trusted you *could*
+use `copy` for a self-contained failed-QC pile. There is no strong reason to
 ever use `move` against shared storage, and the default will stay `report_only`.
 
 ## Permissions: belt and braces
