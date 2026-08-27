@@ -6,6 +6,7 @@
   bhqc init           Write a starter config.toml and create the QC folders
   bhqc status         Print the current service status
   bhqc doctor         Check FFmpeg/Tesseract/dictionary are all reachable
+  bhqc check-access   Prove the QC account's permissions are what you think
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .access import Status, run_all
 from .config import Config
 from .findings import Verdict
 from .pipeline import cleanup_workdir, run_qc
@@ -187,6 +189,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"\n  Routing mode: {mode} — {consequence}")
     if mode == "move":
         print("    Only use 'move' on a QC folder this app owns, never on shared storage.")
+    print("    Run 'bhqc check-access' to verify the account's permissions.")
 
     print(f"\n  Folders under {cfg.paths.root}:")
     for label, path in (
@@ -199,6 +202,60 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     print("\n  All good." if not problems else f"\n  {problems} problem(s) found.")
     return 0 if problems == 0 else 1
+
+
+_MARK = {
+    Status.OK: "  ok  ",
+    Status.WARN: " warn ",
+    Status.FAIL: " FAIL ",
+    Status.SKIPPED: " skip ",
+}
+
+
+def cmd_check_access(args: argparse.Namespace) -> int:
+    """Verify what the QC account can and cannot do, by actually trying it."""
+    cfg = _load(args)
+
+    print("\n  Checking what this account can do.")
+    if not args.no_write_probe:
+        print("  A zero-byte probe file is created and immediately removed in each")
+        print("  folder — it is how a read-only share is confirmed to be read-only.")
+    print()
+
+    checks = run_all(cfg, write_probe=not args.no_write_probe)
+    for check in checks:
+        print(f"  [{_MARK[check.status]}] {check.name}")
+        print(f"           {check.detail}")
+        if check.advice:
+            for line in _wrap(check.advice, 68):
+                print(f"           {line}")
+        print()
+
+    failures = [c for c in checks if c.status is Status.FAIL]
+    warnings = [c for c in checks if c.status is Status.WARN]
+
+    if failures:
+        print(f"  {len(failures)} problem(s) must be fixed before this will run.\n")
+        return 1
+    if warnings:
+        print(f"  Usable, with {len(warnings)} thing(s) worth tightening.\n")
+        return 0
+    print("  All good — the account has read-only access to the renders and full\n"
+          "  access to its own folders.\n")
+    return 0
+
+
+def _wrap(text: str, width: int) -> list[str]:
+    words, lines, current = text.split(), [], ""
+    for word in words:
+        if current and len(current) + 1 + len(word) > width:
+            lines.append(current)
+            current = word
+        else:
+            current = f"{current} {word}".strip()
+    if current:
+        lines.append(current)
+    return lines
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -238,6 +295,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="Check dependencies and folders")
     doctor.set_defaults(func=cmd_doctor)
+
+    access = sub.add_parser(
+        "check-access",
+        help="Verify the QC account is read-only on the renders and writable on its own folders",
+    )
+    access.add_argument(
+        "--no-write-probe",
+        action="store_true",
+        help="Do not attempt a test write in the input folder (skips the read-only check)",
+    )
+    access.set_defaults(func=cmd_check_access)
     return parser
 
 

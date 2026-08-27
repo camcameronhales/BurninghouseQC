@@ -54,7 +54,7 @@ An automated QC pipeline that watches a folder for newly rendered video files, c
 
 ## 6. Open questions to resolve early in the build
 
-Status as of Session 4 — see the Progress Log for what changed.
+Status as of Session 5 — see the Progress Log for what changed.
 
 - **OS of the edit machine?** (Windows vs Mac — affects service/packaging approach)
   → **RESOLVED: macOS 26.5.2 (25F84).** `docs/service-setup.md` is now a macOS
@@ -303,3 +303,51 @@ promise in a config file.
 3. **Re-measure runtime on the real machine** against real footage.
 4. Decide who owns the custom dictionary.
 5. Set up the read-only service account on the share before phase 2.
+
+### Session 5 — 2026-08-26
+
+Set up the read-only service account — or rather, the half of it that can be
+done from here. Creating the account needs access to the server and the Mac, so
+what this session delivers is the **verification tool** and the **runbook**.
+
+**`bhqc check-access`** (`access.py`) — proves the permissions rather than
+trusting the config. It tries the operations: lists the input folder, attempts
+a write there (which should fail), attempts writes in every QC folder (which
+should succeed), reports whether the input is a local disk or a network share,
+and cross-checks the routing mode against what the permissions actually allow.
+Exits 0 when usable, 1 when something must be fixed, so it can gate a setup
+script.
+
+The write probe is a zero-byte file with an obvious name, removed immediately
+in a `finally`. It is the only write this app will ever attempt against the
+input folder, and its whole purpose is to confirm that the write fails.
+`--no-write-probe` skips it.
+
+It also catches a real footgun: `routing.mode = "move"` against a read-only
+share fails every file. That is now a hard FAIL at check time with the fix
+named, rather than a pile of confusing errors at 2am.
+
+**`docs/readonly-account.md`** — the runbook for the part I can't do: creating
+the account on Synology, QNAP, Windows Server, macOS File Sharing, Samba and
+NFS; storing the password in the macOS keychain (never in the repo or config);
+mounting `-o rdonly`; making the mount survive a reboot; and reading the
+verification output. Includes the LaunchAgent-vs-LaunchDaemon trap — a daemon
+runs outside the user session and cannot see a user-mounted share.
+
+**Verified end to end** on a genuinely restricted account (a real non-root Unix
+user against a `555` directory, since root ignores permission bits):
+- `check-access` correctly reported `input folder is read-only: YES`
+- a full QC run under that account produced the right verdict and report,
+  source checksums and mtimes unchanged, nothing new in the share
+- `mode = "move"` against that share was caught with exit 1
+
+**Tested:** 179 tests passing (up from 164), including that the probe never
+leaves a file behind.
+
+**What's left:**
+1. **Create the account on the real server** and mount it — `docs/readonly-account.md`,
+   §1 and §2. Then `bhqc check-access` on the Mac is the acceptance test.
+2. **Install on the actual Mac.** Still nothing has run on macOS.
+3. **Phase 1 local pilot** on real render output, tuning per `docs/tuning.md`.
+4. **Re-measure runtime on the real machine** against real footage.
+5. Decide who owns the custom dictionary.

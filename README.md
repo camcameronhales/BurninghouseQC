@@ -22,7 +22,8 @@ Every file gets a report, whichever folder it lands in, so staff can always see
 > it reads the render and files a *report*, leaving the file exactly where it
 > is. Moving files is opt-in and intended for a QC folder the app owns.
 > See **[`docs/server-safety.md`](docs/server-safety.md)** for exactly what
-> touches what.
+> touches what, and **[`docs/readonly-account.md`](docs/readonly-account.md)**
+> to make that a filesystem guarantee rather than a promise.
 
 ---
 
@@ -95,6 +96,7 @@ pip install -e .
 
 bhqc init          # creates the QC folders and a config.toml
 bhqc doctor        # checks FFmpeg, Tesseract, the dictionary and the folders
+bhqc check-access  # proves the account is read-only on the renders share
 ```
 
 ## Use
@@ -111,6 +113,9 @@ bhqc -c config.toml watch
 
 # Is it alive? What did it last do?
 bhqc -c config.toml status
+
+# Prove the permissions are what you think they are
+bhqc -c config.toml check-access
 ```
 
 `scan` and `run` exit `0` on pass, `10` on review and `20` on fail, so they drop
@@ -193,6 +198,7 @@ burninghouse_qc/
   spelling.py       dictionary + custom word list + OCR-aware filtering
   variants.py       British/Australian spelling tolerance
   scan.py           one decode pass shared by black + scene detection
+  access.py         permission verification — proves read-only is read-only
   transfer.py       verified copy/move; never deletes an unverified source
   ledger.py         what has already been checked, so nothing is re-QC'd
   mounts.py         network-share detection (FSEvents vs polling)

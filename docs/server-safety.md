@@ -139,10 +139,23 @@ The strongest guarantee isn't in the config, it's in the filesystem. If the
 account the launchd agent runs as has **read-only** access to the share, then
 no bug and no misconfiguration can write to it.
 
-That is worth doing regardless of what this document promises. Give the QC
-account read-only rights to the renders share and full rights only to the local
-QC folder. Then `bhqc doctor` will still pass, QC will still run, and
-`mode = "move"` would fail loudly and harmlessly instead of doing damage.
+That is worth doing regardless of what this document promises, and it is the
+one safeguard that doesn't depend on this app behaving.
+**[`readonly-account.md`](readonly-account.md)** is the step-by-step: creating
+the account (Synology, QNAP, Windows, macOS sharing, Samba, NFS), mounting it
+read-only on the Mac with keychain credentials, and verifying it.
+
+Verification is a command, not a promise:
+
+```bash
+bhqc -c config.toml check-access
+```
+
+It tries the operations rather than reading the config — a zero-byte probe file
+created and immediately deleted in each folder, which is how a read-only share
+is confirmed to actually be read-only. It also catches a config that asks for
+something the permissions forbid, like `mode = "move"` against a read-only
+share, and exits non-zero so it can gate a setup script.
 
 ## Checking what it did
 
