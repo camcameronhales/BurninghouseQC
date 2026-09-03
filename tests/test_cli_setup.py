@@ -160,3 +160,28 @@ def test_a_watch_folder_with_spaces_round_trips_through_the_config(tmp_path):
     reloaded = Config.load(config)
     assert reloaded.paths.input == watch
     assert " " in str(reloaded.paths.input)
+
+
+def test_init_on_an_existing_config_changes_nothing(tmp_path):
+    """Real bug: init refused to overwrite the config but created the folder
+    named by --input anyway, then told the user to drop renders into a folder
+    nothing was watching."""
+    config = tmp_path / "config.toml"
+    main(["init", "-o", str(config)])
+    original = config.read_text()
+    wanted = tmp_path / "BurninghouseQC Check"
+
+    assert main(["init", "-o", str(config), "--input", str(wanted)]) == 1
+
+    assert config.read_text() == original, "the config must not change"
+    assert not wanted.exists(), "no folder should be created for a config not written"
+
+
+def test_force_does_apply_a_new_input_folder(tmp_path):
+    config = tmp_path / "config.toml"
+    main(["init", "-o", str(config)])
+    wanted = tmp_path / "BurninghouseQC Check"
+
+    assert main(["init", "-o", str(config), "--input", str(wanted), "--force"]) == 0
+    assert Config.load(config).paths.input == wanted
+    assert wanted.is_dir()

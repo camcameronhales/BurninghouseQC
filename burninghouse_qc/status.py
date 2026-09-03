@@ -36,6 +36,33 @@ def setup_logging(log_file: Path, verbose: bool = False) -> logging.Logger:
     return logger
 
 
+def running_pid(status_path: Path) -> int | None:
+    """The pid of a watcher that still appears to be alive, if any.
+
+    Once the launchd service is installed it becomes easy to also leave a
+    manual `bhqc watch` running. Two watchers on one folder double-process
+    everything and fight over the ledger.
+    """
+    try:
+        state = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    pid = state.get("pid")
+    if not isinstance(pid, int) or pid == os.getpid():
+        return None
+    if state.get("state") in (None, "stopped"):
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        return pid          # alive, just not ours to signal
+    except OSError:
+        return None
+    return pid
+
+
 class StatusFile:
     """Atomically-written JSON snapshot of what the service is doing."""
 

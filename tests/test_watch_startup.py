@@ -124,3 +124,51 @@ def test_hidden_files_are_not_counted_as_wrong_format(service):
 
     assert "Input folder is empty" in service.logger.text
     assert "warning" not in [level for level, _ in service.logger.messages]
+
+
+class TestConcurrentWatchers:
+    """Two watchers on one folder double-process everything."""
+
+    def test_a_live_watcher_is_detected(self, tmp_path):
+        import json
+        import os
+
+        from burninghouse_qc.status import running_pid
+
+        status = tmp_path / "status.json"
+        status.write_text(json.dumps({"pid": os.getppid(), "state": "idle"}))
+        assert running_pid(status) == os.getppid()
+
+    def test_our_own_pid_is_not_reported(self, tmp_path):
+        import json
+        import os
+
+        from burninghouse_qc.status import running_pid
+
+        status = tmp_path / "status.json"
+        status.write_text(json.dumps({"pid": os.getpid(), "state": "idle"}))
+        assert running_pid(status) is None
+
+    def test_a_dead_pid_is_not_reported(self, tmp_path):
+        import json
+
+        from burninghouse_qc.status import running_pid
+
+        status = tmp_path / "status.json"
+        status.write_text(json.dumps({"pid": 999999, "state": "idle"}))
+        assert running_pid(status) is None
+
+    def test_a_cleanly_stopped_watcher_is_not_reported(self, tmp_path):
+        import json
+        import os
+
+        from burninghouse_qc.status import running_pid
+
+        status = tmp_path / "status.json"
+        status.write_text(json.dumps({"pid": os.getppid(), "state": "stopped"}))
+        assert running_pid(status) is None
+
+    def test_a_missing_status_file_is_fine(self, tmp_path):
+        from burninghouse_qc.status import running_pid
+
+        assert running_pid(tmp_path / "nope.json") is None

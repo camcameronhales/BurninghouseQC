@@ -191,6 +191,26 @@ def _render_config(template_text: str, cfg: Config, dictionary: Path) -> str:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
+    target = Path(args.output or "config.toml").expanduser().resolve()
+
+    # Check this BEFORE touching the filesystem. Creating folders for a config
+    # we are then not going to write leaves a folder nothing watches, and a
+    # message telling you to put renders in it.
+    if target.exists() and not args.force:
+        existing = Config.load(target)
+        existing.ensure_paths()
+        print(f"\n  {target} already exists — nothing was changed.")
+        print(f"  It is watching: {existing.paths.input}")
+        if getattr(args, "input", None):
+            wanted = Path(args.input).expanduser().resolve()
+            if wanted != existing.paths.input:
+                print(f"\n  You asked for:  {wanted}")
+                print("  To switch to it, either edit the `input` line in the config,")
+                print(f"  or start over:  mv {target} {target}.old && bhqc init "
+                      f'--input "{wanted}"')
+        print()
+        return 1
+
     cfg = _load(args)
     if not getattr(args, "root", None):
         # Default the QC root next to the config being written, resolved.
@@ -212,11 +232,8 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     cfg.ensure_paths()
 
-    target = Path(args.output or "config.toml").expanduser().resolve()
     template = Path(__file__).resolve().parent.parent / "config.example.toml"
-    if target.exists() and not args.force:
-        print(f"{target} already exists (use --force to overwrite)", file=sys.stderr)
-    elif template.exists():
+    if template.exists():
         dictionary = _install_dictionary(target.parent)
         target.write_text(
             _render_config(template.read_text(encoding="utf-8"), cfg, dictionary),

@@ -25,7 +25,7 @@ from .pipeline import cleanup_workdir, run_qc
 from .power import keep_awake
 from .router import route
 from .stability import Stability, is_candidate, wait_until_stable
-from .status import StatusFile, setup_logging
+from .status import StatusFile, running_pid, setup_logging
 
 
 class _InputHandler(FileSystemEventHandler):
@@ -216,6 +216,17 @@ class QCService:
     # -- lifecycle --------------------------------------------------------
     def run(self) -> None:
         self.cfg.ensure_paths()
+
+        other = running_pid(self.cfg.paths.status_file)
+        if other is not None:
+            self.logger.warning(
+                "Another watcher (pid %d) already appears to be running on this "
+                "config. Two will double-process every file. Stop the other one, "
+                "or the background service with: launchctl bootout gui/$(id -u)/"
+                "com.burninghouse.qc",
+                other,
+            )
+
         self.logger.info("Burninghouse QC watching %s", self.cfg.paths.input)
         self.status.update(state="idle", current_file=None, queued=0)
 
