@@ -11,6 +11,9 @@ An automated QC pipeline that watches a folder for newly rendered video files, c
 ## 2. Environment & constraints
 
 - Runs on a **single, infrequently-used second edit machine**
+  *(Revised Session 11: two machines, each an independent install against its
+  own local storage. Whichever machine did the render does its own QC. Nothing
+  shared between them, and no NAS access.)*
 - No multi-user UI needed — it's a background/unattended service, not an interactive app
 - Should start automatically on machine boot (background service / scheduled task)
 - Minimal interface: system tray icon or status file showing idle/processing/done is enough for v1. No polished GUI required.
@@ -579,3 +582,28 @@ findings and the clean clip still yields none.
 2. Keep running deliverables through it alongside manual QC.
 3. Add client and talent names to the custom dictionary as they come up.
 4. Decide `alongside` vs `report_only` for the Synology before phase 2.
+
+### Session 11 — 2026-09-03
+
+**Deployment model settled: two independent installs, local storage only.**
+Whichever machine performs the render does the QC on that machine, against its
+own drive. Neither install touches the Synology, and nothing is shared between
+them.
+
+That retires the shared-storage work rather than wasting it — `mounts.py`
+(FSEvents vs polling), `work_from_local_copy`, `server-safety.md` and
+`readonly-account.md` all remain, tested, but are dormant: the network-mount
+detection simply finds a local disk and does nothing. The docs are now marked
+as not in use rather than as an upcoming phase.
+
+The one thing that does **not** stay in sync by itself is
+`dictionary/custom_words.txt`. Each machine has its own copy, and a client name
+added on one will not be known to the other. For two machines a manual copy is
+the pragmatic answer; worth revisiting if it becomes a nuisance.
+
+Also fixed this session: `init` created the folder named by `--input` even when
+it refused to overwrite an existing config, leaving a folder nothing watched;
+and the watcher now warns when a second watcher is already running against the
+same config, which becomes easy to do once the launchd service is installed.
+
+**Tested:** 277 tests passing.

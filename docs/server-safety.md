@@ -1,5 +1,10 @@
 # What this app does to your server
 
+> **Not currently in use.** Both installs run against local storage — whichever
+> machine did the render does its own QC on its own drive. This document is
+> kept for the day that changes; see [`local-trial.md`](local-trial.md) for the
+> setup actually in use.
+
 Renders land on a shared server, so the honest answer to "what can this thing
 do to my files?" needs to be short, specific and checkable. Here it is.
 

@@ -1,8 +1,8 @@
 # Setting up the read-only QC account
 
-> **This is phase 2 — the Synology deployment.** Skip it entirely while you are
-> trialling locally; see [`local-trial.md`](local-trial.md) for that. Come back
-> here when you are ready to point the app at the NAS.
+> **Not currently in use.** Both installs run against local storage, so no
+> shared-storage account is needed. Kept for the day that changes.
+> [`local-trial.md`](local-trial.md) is the setup actually in use.
 
 **Why bother:** the app's default mode never writes to the renders folder. This
 makes that a property of the filesystem instead of a promise in a config file.

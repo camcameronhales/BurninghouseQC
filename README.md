@@ -4,8 +4,9 @@ Unattended QC for rendered video. Watches a folder, checks each new render for
 misspellings in on-screen graphics and for technical faults, writes a report,
 and sorts the file into **pass**, **review** or **error**.
 
-Built to run as a launchd background service on a single macOS edit machine —
-no UI, no server, nobody watching it.
+Built to run as a launchd background service on a macOS edit machine — no UI,
+no server, nobody watching it. Each machine runs its own independent install
+against its own local storage: whichever machine did the render does its QC.
 
 ```
 renders/

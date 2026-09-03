@@ -289,15 +289,15 @@ Two things worth copying across rather than rebuilding:
 Do **not** copy `qc_root/processed.json`; each machine keeps its own record of
 what it has checked.
 
-## Step 9 — later still: point it at the Synology
+## Shared storage — not the plan
 
-Only after phase 1 has earned your trust. `docs/server-safety.md` explains what
-the app does and doesn't write, and `docs/readonly-account.md` sets up a
-read-only account so the guarantee is enforced by the NAS rather than promised
-by the config.
+The current plan is two independent installs on local storage: whichever
+machine did the render does its own QC, against its own drive. Nothing is
+shared between them and neither touches the NAS.
 
-The change itself is one line — `paths.input` — because the mode you'll be
-running is the one you've been trialling all along.
+If that ever changes, `docs/server-safety.md` covers exactly what the app
+writes and `docs/readonly-account.md` sets up a read-only account. Both are
+written and tested; neither is needed for the local setup.
 
 ---
 
