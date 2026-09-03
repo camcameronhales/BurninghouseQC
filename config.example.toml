@@ -52,7 +52,10 @@ pixel_threshold   = 0.10           # ffmpeg blackdetect pix_th
 picture_threshold = 0.98           # ffmpeg blackdetect pic_th
 min_duration      = 0.10           # shortest run reported at all
 fail_duration     = 0.50           # >= this, mid-programme => FAIL
-edge_grace        = 1.50           # black this close to head/tail => REVIEW (fades)
+edge_grace        = 1.50           # black this close to head/tail counts as an edge
+# Fades are on nearly every deliverable: "info" notes them in the report without
+# affecting the verdict. "review" or "ignore" also available.
+edge_severity     = "info"
 
 
 [silence]
@@ -61,6 +64,9 @@ noise_db      = -50.0
 min_duration  = 1.0
 fail_duration = 3.0                # >= this, mid-programme => FAIL
 edge_grace    = 1.50
+# Handles at head and tail are on every deliverable — "info" notes them without
+# making an otherwise clean file look borderline.
+edge_severity = "info"
 missing_audio = "review"           # "fail" | "review" | "ignore"
 
 
@@ -110,6 +116,11 @@ accept_british_spellings = true
 # through a word. A significant false-positive control on stylised graphics.
 # Mixed-case brand names (ProRes, iPhone) go in the custom dictionary.
 require_normal_case = true
+
+# Skip Title-case words sitting beside another Title-case word — almost always
+# a name in a lower third. A spell-checker cannot validate a surname, and no
+# dictionary will hold every name a client sends.
+skip_proper_nouns = true
 
 
 [routing]

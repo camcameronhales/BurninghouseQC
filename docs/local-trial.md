@@ -215,13 +215,35 @@ Two things worth doing early:
 
 `docs/tuning.md` is the full table of what to change when.
 
-## Step 8 — only once you're happy: run it automatically
+## Step 8 — run it automatically, no Terminal window
 
-Skip this until the verdicts are ones you'd act on. While you're tuning,
-running `bhqc watch` by hand is easier.
+Two commands:
 
-When you're ready, `docs/service-setup.md` installs it as a launchd agent that
-starts on its own and survives reboots.
+```bash
+.venv/bin/bhqc -c config.toml install-service
+```
+
+That writes a launchd agent with the right paths filled in — the venv's Python,
+your config, your folders — and prints the command to start it. Then run the
+`launchctl bootstrap` line it gives you.
+
+From then on it runs in the background, starts itself at login, and restarts if
+it ever crashes. No Terminal window needed.
+
+| | |
+| --- | --- |
+| Is it running? | `launchctl print gui/$(id -u)/com.burninghouse.qc \| head -20` |
+| What's it doing? | `bhqc -c config.toml status` |
+| Watch it work | `tail -f qc_root/burninghouse-qc.log` |
+| Restart after a config change | `launchctl kickstart -k gui/$(id -u)/com.burninghouse.qc` |
+| Stop it | `launchctl bootout gui/$(id -u)/com.burninghouse.qc` |
+| Remove it | `bhqc uninstall-service` |
+
+A threshold or dictionary change takes effect on the next file with no restart.
+Only a path change needs the `kickstart`.
+
+`docs/service-setup.md` has the detail, including running it without a login
+and the privacy-permission traps.
 
 ## Step 9 — later still: point it at the Synology
 

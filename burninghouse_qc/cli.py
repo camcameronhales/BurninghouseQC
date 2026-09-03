@@ -8,6 +8,7 @@
   bhqc doctor         Check FFmpeg/Tesseract/dictionary are all reachable
   bhqc check-access   Prove the QC account's permissions are what you think
   bhqc forget FILE    Clear a file from the ledger so it is checked again
+  bhqc install-service  Run it automatically in the background (macOS)
 """
 
 from __future__ import annotations
@@ -398,6 +399,62 @@ def _wrap(text: str, width: int) -> list[str]:
     return lines
 
 
+def cmd_install_service(args: argparse.Namespace) -> int:
+    """Write a launchd agent so the watcher runs without a Terminal window."""
+    from . import service
+
+    cfg = _load(args)
+    if sys.platform != "darwin":
+        print("Background service installation is macOS only.", file=sys.stderr)
+        return 2
+    if not args.config:
+        print("Point at your config explicitly:  bhqc -c config.toml install-service",
+              file=sys.stderr)
+        return 2
+
+    config_path = Path(args.config).expanduser().resolve()
+    cfg.ensure_paths()
+
+    if args.print_only:
+        print(service.build_plist(config_path, Path(sys.executable), cfg))
+        return 0
+
+    target = service.install(config_path, cfg)
+    cmds = service.commands()
+
+    print(f"\n  Wrote {target}")
+    print(f"  It will run: {sys.executable}")
+    print(f"  Watching:    {cfg.paths.input}\n")
+    print("  Start it now (and at every login from here on):\n")
+    print(f"      {cmds['start']}\n")
+    print("  Then, whenever you need them:\n")
+    print(f"      stop     {cmds['stop']}")
+    print(f"      restart  {cmds['restart']}")
+    print(f"      check    {cmds['check']}\n")
+    print("  Once started, no Terminal window is needed — it comes back after a")
+    print("  reboot and restarts itself if it ever crashes. Watch it with:\n")
+    print(f"      bhqc -c {config_path} status")
+    print(f"      tail -f {cfg.paths.log_file}\n")
+    return 0
+
+
+def cmd_uninstall_service(args: argparse.Namespace) -> int:
+    from . import service
+
+    if sys.platform != "darwin":
+        print("Background service installation is macOS only.", file=sys.stderr)
+        return 2
+    cmds = service.commands()
+    target = service.agent_path()
+    print(f"\n  Stop it first:\n\n      {cmds['stop']}\n")
+    if target.exists():
+        target.unlink()
+        print(f"  Removed {target}\n")
+    else:
+        print(f"  No agent file at {target}\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bhqc", description="Burninghouse video QC")
     parser.add_argument("--version", action="version", version=f"burninghouse-qc {__version__}")
@@ -453,6 +510,19 @@ def build_parser() -> argparse.ArgumentParser:
     forget.add_argument("file", nargs="?", default=None)
     forget.add_argument("--all", action="store_true", help="Clear the whole ledger")
     forget.set_defaults(func=cmd_forget)
+
+    install = sub.add_parser(
+        "install-service",
+        help="Run the watcher in the background, no Terminal window (macOS)",
+    )
+    install.add_argument("--print", dest="print_only", action="store_true",
+                         help="Print the launchd agent instead of installing it")
+    install.set_defaults(func=cmd_install_service)
+
+    uninstall = sub.add_parser(
+        "uninstall-service", help="Remove the background service"
+    )
+    uninstall.set_defaults(func=cmd_uninstall_service)
     return parser
 
 

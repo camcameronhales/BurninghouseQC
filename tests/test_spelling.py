@@ -123,3 +123,52 @@ def test_the_case_filter_can_be_turned_off(tmp_path):
 
     relaxed = Speller(SpellingConfig(require_normal_case=False))
     assert relaxed.is_checkable("gOLOUR", min_length=4)
+
+
+# -- proper nouns --------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "surname,forename",
+    [
+        ("Rothberg", "Steven"),
+        ("Gullery", "Simon"),
+        ("Menzel", "Kate"),
+        ("Branson", "Mark"),
+        ("Walsh", "Neil"),
+    ],
+)
+def test_names_in_lower_thirds_are_not_flagged(surname, forename):
+    """Real regression: every interview deliverable FAILED on the talent's
+    surname. A spell-checker cannot validate a name, and no dictionary will
+    ever hold every name a client sends."""
+    from burninghouse_qc.spelling import looks_like_proper_noun
+
+    assert looks_like_proper_noun(surname, [forename])
+
+
+def test_a_typo_beside_a_lowercase_word_is_still_caught():
+    from burninghouse_qc.spelling import looks_like_proper_noun
+
+    assert not looks_like_proper_noun("Acheiving", ["the", "Perfect"][:1])
+
+
+@pytest.mark.parametrize("stopword", ["The", "Of", "And", "In", "For"])
+def test_a_title_cased_card_does_not_hide_a_typo(stopword):
+    """"Acheiving The Perfect Shot" must not read as a name."""
+    from burninghouse_qc.spelling import looks_like_proper_noun
+
+    assert not looks_like_proper_noun("Acheiving", [stopword])
+
+
+def test_lowercase_and_caps_words_are_never_proper_nouns():
+    from burninghouse_qc.spelling import looks_like_proper_noun
+
+    assert not looks_like_proper_noun("recieve", ["Please"])
+    assert not looks_like_proper_noun("SEPERATE", ["Keep"])
+
+
+def test_a_word_with_no_neighbours_is_not_a_proper_noun():
+    """A lone capitalised word could be a sentence start — still checked."""
+    from burninghouse_qc.spelling import looks_like_proper_noun
+
+    assert not looks_like_proper_noun("Acheiving", [])

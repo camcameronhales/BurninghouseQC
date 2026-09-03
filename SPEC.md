@@ -531,3 +531,51 @@ holding exactly the two renders and their two reports, nothing else, and
 2. Measure runtime on a real master.
 3. Continue the phase 1 pilot alongside manual QC.
 4. Decide `alongside` vs `report_only` for the Synology before phase 2.
+
+### Session 10 — 2026-09-03
+
+Five real client deliverables through the system (MMR executive interviews,
+1080p, 1m39s–2m15s). The reports were well received; two systematic false
+positives showed up that would have fired on every file of this type.
+
+**1. Surnames failed every interview.** "Rothberg" (96% confidence, 4 frames)
+and "Gullery" (91%, 5 frames) were both flagged as misspellings — they are the
+talent's names in the lower third. A spell-checker fundamentally cannot
+validate a surname, and no dictionary will ever hold every name a client sends.
+Left alone this makes FAIL meaningless for interview work, which is most of it.
+
+Fix: `spelling.skip_proper_nouns` (on by default). A Title-case word sitting
+beside another Title-case word is taken as a name and skipped. Stopwords are
+excluded from establishing that context, so "Acheiving The Perfect Shot" still
+catches the typo. A name standing alone with no forename beside it is still
+checked, and goes in the custom dictionary.
+
+**2. Head/tail silence flagged on all five.** 1.41s–2.69s of silence at the
+tail — normal handles. On the Neil Walsh file it was the *only* finding, which
+made an otherwise clean deliverable come back NEEDS REVIEW.
+
+Fix: `black.edge_severity` and `silence.edge_severity`, both defaulting to
+`info`. Fades and handles are recorded in the report but no longer affect the
+verdict. `review` and `ignore` are available.
+
+**Real runtime, at last.** 26.2s / 33.8s / 38.5s for 99s / 127s / 135s of
+1080p — a consistent **~16 seconds of QC per minute of video**. A 10-minute
+master is about 2m 40s. That is roughly twice as fast as the synthetic
+benchmarks on the Linux container, as expected.
+
+**`bhqc install-service`** — writes the launchd agent with the venv's Python,
+the real config path and the real folders filled in, then prints the
+`launchctl bootstrap` line. No hand-edited plist, which is the usual way these
+end up pointing at the system Python or an empty folder. `bhqc
+uninstall-service` removes it.
+
+Regression checked: the planted-fault clip still yields exactly its three
+findings and the clean clip still yields none.
+
+**Tested:** 267 tests passing (up from 237).
+
+**What's left:**
+1. Install the background service on the Mac and confirm it survives a reboot.
+2. Keep running deliverables through it alongside manual QC.
+3. Add client and talent names to the custom dictionary as they come up.
+4. Decide `alongside` vs `report_only` for the Synology before phase 2.

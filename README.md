@@ -52,7 +52,16 @@ three gates before they can fail a file:
 2. **Repetition** — a word has to appear in at least two sampled frames to fail.
    A one-frame sighting can only ever route to *review*.
 3. **Word shape** — tokens with digits, short all-caps acronyms, roman numerals
-   and words under four letters are never checked.
+   and words under four letters are never checked. Nor are odd case shapes
+   (`gOLOUR`, `PROFESSlONAL`), which are misread characters rather than
+   misspellings.
+4. **Names** — a Title-case word beside another Title-case word is taken as a
+   name in a lower third and skipped. A spell-checker cannot validate a
+   surname, and flagging one would fire on every interview ever shot.
+
+Fades to black and silent handles at the head and tail are recorded in the
+report as information, but do not affect the verdict — they are on nearly every
+deliverable.
 
 British/Australian spellings are handled automatically: `colour`, `organise`,
 `centre`, `programme` and the rest are accepted without needing a word list,
@@ -72,17 +81,16 @@ House deliverables run **2–10 minutes**, which fits the full cadence inside th
 `max_frames` budget. Longer clips widen the interval rather than losing
 coverage at the end of the programme.
 
-Measured on a 5-minute 1080p clip: **160s**, or roughly **30s of QC per minute
-of video**, so a 10-minute master lands around 5 minutes. Three things keep it
-there — black and scene detection share a single decode pass, the whole
+Measured on real 1080p interview footage on the target Mac: **~16 seconds of QC
+per minute of video**, so a 10-minute master lands around 2m 40s. Three things
+keep it there — black and scene detection share a single decode pass, the whole
 baseline grid is pulled in one more pass instead of one seek per frame, and
 frames are normalised to ~1440px tall before OCR rather than blindly upscaled
 2x. Together those took a 5-minute clip from 244s to 160s while sampling *more*
 frames than before.
 
-(Those numbers are from the Linux container this was built in, against
-deliberately busy synthetic footage. Treat them as indicative — real graded
-footage OCRs faster, and an Apple Silicon Mac will differ.)
+(Earlier synthetic benchmarks on a Linux container were about twice that; the
+real machine and real footage are both faster.)
 
 ---
 

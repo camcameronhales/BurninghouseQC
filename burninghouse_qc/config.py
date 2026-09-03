@@ -83,8 +83,13 @@ class BlackConfig:
     # A black run at least this long is a clear-cut fail.
     fail_duration: float = 0.50
     # Black inside this many seconds of the head/tail is usually intentional
-    # (fade up / fade out) so it is downgraded to review.
+    # (fade up / fade out).
     edge_grace: float = 1.50
+    # What to do with black at the head or tail: "info" records it in the
+    # report without affecting the verdict, "review" routes the file for a
+    # human look, "ignore" drops it. Fades are on nearly every deliverable, so
+    # flagging them for review makes every file look borderline.
+    edge_severity: str = "info"
 
 
 @dataclass
@@ -95,6 +100,10 @@ class SilenceConfig:
     # A silent run at least this long is a clear-cut audio dropout.
     fail_duration: float = 3.0
     edge_grace: float = 1.50
+    # Handles at the head and tail are on nearly every deliverable. "info"
+    # records them without affecting the verdict; "review" or "ignore" also
+    # available.
+    edge_severity: str = "info"
     # A file with no audio stream at all: "fail" | "review" | "ignore".
     missing_audio: str = "review"
 
@@ -155,6 +164,10 @@ class SpellingConfig:
     # a misspelling — people do not change case halfway through a word. This is
     # a significant false-positive control on stylised graphics.
     require_normal_case: bool = True
+    # Skip Title-case words sitting next to another Title-case word — almost
+    # always a name in a lower third. A spell-checker cannot validate a
+    # surname, so flagging one is noise on every interview ever shot.
+    skip_proper_nouns: bool = True
 
 
 @dataclass

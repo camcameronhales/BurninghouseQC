@@ -44,6 +44,8 @@ Then classify what you find:
 | Clean file flagged as *fail* | raise `text.min_confidence` first, then `fail_confidence` |
 | A flag on a garbled word (`gOLOUR`, `PROFESSlONAL`) | should already be filtered by `spelling.require_normal_case`; if not, raise `text.min_confidence` |
 | Same brand/client word flagged repeatedly | add it to `dictionary/custom_words.txt` — don't touch thresholds |
+| A name in a lower third flagged | should already be skipped by `spelling.skip_proper_nouns`; if a name appears alone with no forename beside it, add it to the dictionary |
+| Head/tail silence or fades reported | they are `info` by default and do not affect the verdict; set `edge_severity = "ignore"` to drop them from the report entirely |
 | A misspelling was missed entirely | lower `text.sample_interval` (denser sampling) |
 | Intentional cut-to-black failed the file | raise `black.fail_duration` |
 | Deliberate pause failed the file | raise `silence.fail_duration` |
@@ -59,6 +61,17 @@ once tells you nothing about which one mattered.
 
 ### `[text]` — the ones you'll touch most
 
+- **`spelling.skip_proper_nouns` (on)** — skips a Title-case word sitting
+  beside another Title-case word, which is almost always a name in a lower
+  third. This was the single biggest source of false positives on real work:
+  every interview deliverable failed on the talent's surname. A spell-checker
+  fundamentally cannot validate a name, and no dictionary will ever hold every
+  name a client sends. A name standing alone with no forename beside it is
+  still checked, so add those to the custom dictionary.
+- **`black.edge_severity` / `silence.edge_severity` (`info`)** — fades and
+  handles are on nearly every deliverable. At `info` they appear in the report
+  without affecting the verdict; `review` makes every file look borderline,
+  and `ignore` drops them entirely.
 - **`spelling.require_normal_case` (on)** — the single most effective
   false-positive control. Only tokens capitalised like real words (lowercase,
   Title Case, ALL CAPS) are checked. A token like `gOLOUR` is a misread `C`,
@@ -125,19 +138,18 @@ once tells you nothing about which one mattered.
 
 ## What it costs to run
 
-Measured on a 5-minute 1080p clip with the shipped defaults: **160 seconds**,
-about 30s of QC per minute of video. A 10-minute master lands near 5 minutes.
-Roughly half of that is OCR, a quarter frame extraction, a quarter the
-black/scene decode pass.
+Measured on the real machine (Mac Studio, macOS 26) against real 1080p
+interview footage:
 
-Two caveats. Those figures come from the Linux container this was built in,
-against deliberately busy synthetic footage — real graded material OCRs faster,
-and an Apple Silicon Mac will differ. **Re-measure on the actual machine early
-in the pilot**, with:
+| Clip | QC time |
+| --- | --- |
+| 1m 39s | 26.2s |
+| 2m 07s | 33.8s |
+| 2m 15s | 38.5s |
 
-```bash
-time bhqc scan "/renders/a_typical_master.mov"
-```
+That is a consistent **~16 seconds of QC per minute of 1080p video**, so a
+10-minute master lands around 2m 40s. Roughly half of that is OCR, a quarter
+frame extraction, a quarter the black/scene decode pass.
 
 If it turns out slower than the render itself, the order to attack it in is:
 raise `sample_interval`, then lower `ocr_target_height`, then raise

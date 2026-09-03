@@ -27,6 +27,38 @@ _ROMAN_NUMERAL = re.compile(r"^[IVXLCDM]+$")
 # iPhone) belong in the custom dictionary; skipping them costs nothing, since
 # they are spelled correctly anyway.
 _NORMAL_CASE = re.compile(r"^(?:[a-z]+|[A-Z][a-z]+|[A-Z]+)$")
+_TITLE_CASE = re.compile(r"^[A-Z][a-z]+$")
+
+# Title-case words that do not imply a name when they sit next to one. Without
+# these, "Achieving The Perfect Shot" would read as a proper noun and a real
+# misspelling in a title-cased card would be missed.
+_TITLE_STOPWORDS = frozenset(
+    """a an the and or but of in on at to for from by with without into over under
+    is are was were be been this that these those his her its their our your my""".split()
+)
+
+
+def is_title_case(token: str) -> bool:
+    return bool(_TITLE_CASE.match(normalise(token)))
+
+
+def looks_like_proper_noun(token: str, neighbours: list[str]) -> bool:
+    """True if a Title-case token sits beside another Title-case word.
+
+    Lower-third name supers are the most common on-screen text in interview
+    work, and a spell-checker cannot possibly validate a surname — "Rothberg"
+    and "Gullery" are not errors, and no dictionary will ever contain every
+    name a client sends. Two capitalised words in a row is the giveaway.
+    """
+    if not is_title_case(token):
+        return False
+    for neighbour in neighbours:
+        cleaned = normalise(neighbour)
+        if not cleaned or cleaned.lower() in _TITLE_STOPWORDS:
+            continue
+        if is_title_case(neighbour):
+            return True
+    return False
 
 
 def normalise(token: str) -> str:

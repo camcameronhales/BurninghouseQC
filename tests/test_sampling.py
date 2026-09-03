@@ -75,3 +75,17 @@ def test_zero_length_input_plans_nothing(duration):
 def test_ocr_scale_normalises_toward_the_target_height(height, expected):
     """720p is upscaled, 1080p less so, and large frames are never shrunk."""
     assert ocr_scale(height, TextConfig()) == pytest.approx(expected)
+
+
+def test_neighbours_are_found_only_on_the_same_line():
+    """Proper-noun detection depends on knowing which words share a line."""
+    from burninghouse_qc.detectors.text import OcrWord, neighbours_on_line
+
+    words = [
+        OcrWord("Simon", 95.0, (0, 0, 10, 10), line=(1, 1, 1)),
+        OcrWord("Gullery", 91.0, (0, 0, 10, 10), line=(1, 1, 1)),
+        OcrWord("Director", 90.0, (0, 0, 10, 10), line=(1, 1, 2)),
+    ]
+    assert neighbours_on_line(words, 1) == ["Simon"]
+    assert neighbours_on_line(words, 0) == ["Gullery"]
+    assert neighbours_on_line(words, 2) == [], "a different line is not a neighbour"

@@ -64,9 +64,23 @@ def parse_silencedetect(stderr: str) -> list[SilenceRun]:
     return runs
 
 
+# "ignore" maps to None, which drops the finding entirely.
+_SEVERITIES: dict[str, Severity | None] = {
+    "info": Severity.INFO,
+    "review": Severity.REVIEW,
+    "fail": Severity.FAIL,
+    "ignore": None,
+}
+
+
+def _edge_severity(cfg: SilenceConfig) -> Severity | None:
+    key = (cfg.edge_severity or "info").strip().lower()
+    return _SEVERITIES.get(key, Severity.INFO) if key in _SEVERITIES else Severity.INFO
+
+
 def classify(
     run: SilenceRun, media_duration: float, cfg: SilenceConfig
-) -> tuple[Severity, str]:
+) -> tuple[Severity | None, str]:
     duration = run.resolved_duration(media_duration)
     end = run.resolved_end(media_duration)
     covers_whole_file = (
@@ -82,8 +96,8 @@ def classify(
         return Severity.FAIL, f"Audio dropout: {duration:.2f}s of silence mid-programme."
     if at_edge:
         return (
-            Severity.REVIEW,
-            f"{duration:.2f}s of silence at the head/tail — probably intentional handles.",
+            _edge_severity(cfg),
+            f"{duration:.2f}s of silence at the head/tail — normal handles.",
         )
     return (
         Severity.REVIEW,
@@ -129,6 +143,8 @@ def detect(
     findings: list[Finding] = []
     for run in runs:
         severity, message = classify(run, media_duration, cfg)
+        if severity is None:
+            continue
         findings.append(
             Finding(
                 detector="silence",

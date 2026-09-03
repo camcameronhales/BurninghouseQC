@@ -37,21 +37,36 @@ def parse_blackdetect(stderr: str) -> list[BlackRun]:
     return runs
 
 
+# "ignore" maps to None, which drops the finding entirely.
+_SEVERITIES: dict[str, Severity | None] = {
+    "info": Severity.INFO,
+    "review": Severity.REVIEW,
+    "fail": Severity.FAIL,
+    "ignore": None,
+}
+
+
+def _edge_severity(cfg: BlackConfig) -> Severity | None:
+    key = (cfg.edge_severity or "info").strip().lower()
+    return _SEVERITIES.get(key, Severity.INFO) if key in _SEVERITIES else Severity.INFO
+
+
 def _touches_edge(run: BlackRun, duration: float, grace: float) -> bool:
     if run.start <= grace:
         return True
     return duration > 0 and run.end >= duration - grace
 
 
-def classify(run: BlackRun, media_duration: float, cfg: BlackConfig) -> tuple[Severity, str]:
+def classify(
+    run: BlackRun, media_duration: float, cfg: BlackConfig
+) -> tuple[Severity | None, str]:
     at_edge = _touches_edge(run, media_duration, cfg.edge_grace)
     sustained = run.duration >= cfg.fail_duration
 
     if at_edge:
         return (
-            Severity.REVIEW,
-            f"Black for {run.duration:.2f}s at the head/tail — likely an intentional "
-            f"fade, but worth an eye.",
+            _edge_severity(cfg),
+            f"Black for {run.duration:.2f}s at the head/tail — normal for a fade.",
         )
     if sustained:
         return (
@@ -83,6 +98,8 @@ def findings_from_runs(
     findings: list[Finding] = []
     for run in runs:
         severity, message = classify(run, media_duration, cfg)
+        if severity is None:
+            continue
         findings.append(
             Finding(
                 detector="black",

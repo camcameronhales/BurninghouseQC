@@ -18,7 +18,7 @@ from pytesseract import Output
 from ..config import TextConfig
 from ..ffmpeg_tools import ffmpeg, passthrough_args
 from ..findings import Finding, Severity, format_timecode
-from ..spelling import Speller, normalise
+from ..spelling import Speller, looks_like_proper_noun, normalise
 
 _PTS_TIME = re.compile(r"pts_time:(?P<t>[0-9.]+)")
 
@@ -28,6 +28,8 @@ class OcrWord:
     text: str
     confidence: float
     box: tuple[int, int, int, int]  # left, top, width, height
+    # Which text line Tesseract put this word on, so neighbours can be found.
+    line: tuple[int, int, int] = (0, 0, 0)
 
 
 @dataclass
@@ -255,8 +257,26 @@ def ocr_frame(frame_path: Path, cfg: TextConfig) -> list[OcrWord]:
             int(data["width"][i] / scale),
             int(data["height"][i] / scale),
         )
-        words.append(OcrWord(text=text, confidence=confidence, box=box))
+        words.append(
+            OcrWord(
+                text=text,
+                confidence=confidence,
+                box=box,
+                line=(data["block_num"][i], data["par_num"][i], data["line_num"][i]),
+            )
+        )
     return words
+
+
+def neighbours_on_line(words: list[OcrWord], index: int) -> list[str]:
+    """The words either side of words[index] on the same text line."""
+    target = words[index]
+    found: list[str] = []
+    for step in (-1, 1):
+        position = index + step
+        if 0 <= position < len(words) and words[position].line == target.line:
+            found.append(words[position].text)
+    return found
 
 
 # --------------------------------------------------------------------------
@@ -270,10 +290,14 @@ def collect_suspects(
     suspects: dict[str, SuspectWord] = {}
     for frame in frames:
         seen_this_frame: set[str] = set()
-        for word in frame.words:
+        for index, word in enumerate(frame.words):
             if word.confidence < cfg.min_confidence:
                 continue
             if not speller.is_checkable(word.text, cfg.min_word_length):
+                continue
+            if speller.cfg.skip_proper_nouns and looks_like_proper_noun(
+                word.text, neighbours_on_line(frame.words, index)
+            ):
                 continue
             if not speller.is_misspelled(word.text):
                 continue
