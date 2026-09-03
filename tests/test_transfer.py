@@ -169,3 +169,48 @@ class TestSnapshot:
         before = FileSnapshot.of(path)
         path.unlink()
         assert not before.matches(FileSnapshot.of(path))
+
+
+# -- ffmpeg flag selection (no ffmpeg needed) ----------------------------
+
+@pytest.mark.parametrize(
+    "detected,expected",
+    [
+        ((6, 1), ["-fps_mode", "passthrough"]),
+        ((9, 0), ["-fps_mode", "passthrough"]),
+        ((5, 1), ["-fps_mode", "passthrough"]),
+        ((5, 0), ["-vsync", "0"]),
+        ((4, 3), ["-vsync", "0"]),
+        (None, ["-fps_mode", "passthrough"]),   # unknown: assume modern
+    ],
+)
+def test_passthrough_flag_matches_the_ffmpeg_version(monkeypatch, detected, expected):
+    from burninghouse_qc import ffmpeg_tools
+
+    monkeypatch.setattr(ffmpeg_tools, "version", lambda: detected)
+    assert ffmpeg_tools.passthrough_args() == expected
+
+
+@pytest.mark.parametrize(
+    "banner,expected",
+    [
+        ("ffmpeg version 9.0.1 Copyright (c) 2000-2026", (9, 0)),
+        ("ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023", (6, 1)),
+        ("ffmpeg version n7.1 Copyright (c) 2000-2024", (7, 1)),
+        ("ffmpeg version 2026-01-01-git-abc123", None),
+        ("something else entirely", None),
+    ],
+)
+def test_version_parsing(monkeypatch, banner, expected):
+    from burninghouse_qc import ffmpeg_tools
+
+    class FakeProc:
+        stdout = banner
+
+    ffmpeg_tools.version.cache_clear()
+    monkeypatch.setattr(ffmpeg_tools, "run", lambda *a, **k: FakeProc())
+    monkeypatch.setattr(ffmpeg_tools, "_binary", lambda name: f"/usr/bin/{name}")
+    try:
+        assert ffmpeg_tools.version() == expected
+    finally:
+        ffmpeg_tools.version.cache_clear()

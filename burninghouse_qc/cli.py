@@ -275,6 +275,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"  {binary:<10} {found or 'NOT FOUND'}")
         problems += 0 if found else 1
 
+    if shutil.which("ffmpeg"):
+        from .ffmpeg_tools import version, version_string
+
+        detected = version()
+        print(f"  {'version':<10} {version_string()}")
+        if detected and detected < (4, 3):
+            print("             WARNING: 4.3+ is needed for the filters this uses.")
+
     try:
         import pytesseract
 

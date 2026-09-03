@@ -410,3 +410,26 @@ dictionary actually resolves and loads from a config outside the repo.
 4. Decide who owns the custom dictionary.
 5. **Phase 2** (Synology) only once phase 1 is trusted: `readonly-account.md`,
    then change `paths.input`.
+
+### Session 7 — 2026-08-27
+
+Phase 1 install started on the real Mac. Homebrew, **FFmpeg 9.0.1** and
+**Tesseract 5.5.3** are in — step 1 of `docs/local-trial.md` complete.
+
+FFmpeg 9 is three majors newer than the 6.x this was built against, so I
+audited the flags before the known-answer test could hit a wall. One real
+problem: **`-vsync 0` has been deprecated since 5.1** (it warns on 6.x) and may
+be removed in 9.x. Replaced with a version-aware shim in `ffmpeg_tools`:
+`-fps_mode passthrough` on 5.1+, `-vsync 0` below that, chosen from the
+detected version. Every other flag used (`-ss`, `-vf`, `-af`, `-frames:v`,
+`-f null`, `-an`, `-vn`, `-loglevel`) is stable.
+
+`bhqc doctor` now prints the FFmpeg version — the first thing worth knowing
+when a filter behaves unexpectedly — and warns below 4.3.
+
+A new e2e test asserts no flag we pass draws a deprecation notice. Writing it
+produced a nice own-goal: pytest names its temp directory after the test, so
+`test_no_deprecated_flags_reach_ffmpeg` appeared in ffmpeg's echoed output path
+and matched the test's own search string. Now filtered.
+
+**Tested:** 202 tests passing (up from 190).

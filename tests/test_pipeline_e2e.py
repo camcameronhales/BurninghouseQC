@@ -155,3 +155,33 @@ def test_unreadable_file_fails_rather_than_crashing(tmp_path):
     result = run_qc(broken, cfg)
     assert result.verdict is Verdict.FAIL
     assert any(f.kind == "unreadable_file" for f in result.findings)
+
+
+# -- ffmpeg version compatibility ----------------------------------------
+
+def test_no_deprecated_flags_reach_ffmpeg(media, tmp_path):
+    """FFmpeg deprecates flags between majors and eventually removes them.
+
+    `-vsync 0` warns on 6.x and may be gone in 9.x, and the target machine runs
+    9.x. This asserts nothing we pass draws a deprecation notice.
+    """
+    from burninghouse_qc.ffmpeg_tools import ffmpeg, passthrough_args
+
+    out_dir = tmp_path / "frames"
+    out_dir.mkdir()
+    proc = ffmpeg([
+        "-i", str(media["clean"]),
+        "-vf", "fps=1/4",
+        *passthrough_args(),
+        "-y", str(out_dir / "f_%03d.png"),
+    ])
+    assert proc.returncode == 0
+    # ffmpeg echoes the output path, and pytest names tmp dirs after the test —
+    # so ignore any line carrying the path, or this matches its own name.
+    complaints = [
+        line
+        for line in proc.stderr.splitlines()
+        if "deprecated" in line.lower() and str(tmp_path) not in line
+    ]
+    assert complaints == [], complaints
+    assert list(out_dir.glob("f_*.png")), "frames should have been written"

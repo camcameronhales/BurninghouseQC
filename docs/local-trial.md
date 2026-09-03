@@ -62,6 +62,10 @@ tesseract --version | head -1
 
 Two lines of version output means you're good.
 
+FFmpeg 9 is newer than the version this was built against (6.x). The app picks
+its flags based on the version it finds, so that is handled — but step 5 is the
+check that proves it, which is why step 5 exists.
+
 ## Step 2 — install the app
 
 ```bash
@@ -222,6 +226,10 @@ Exit codes: `0` pass, `10` review, `20` fail — handy if you ever script it.
 
 **Tesseract "not usable" in doctor** — Homebrew isn't on PATH. Reopen Terminal,
 or run `eval "$(/opt/homebrew/bin/brew shellenv)"`.
+
+**"Unrecognized option" from ffmpeg** — a flag has been removed in a newer
+FFmpeg than this was tested on. `bhqc ... doctor` prints the exact version;
+send me that line and the error.
 
 **A file sits in input and nothing happens** — it must be `.mov` or `.mp4`
 (add others to `watcher.video_extensions`), and it must have been unchanged for

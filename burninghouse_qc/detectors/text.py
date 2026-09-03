@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw, ImageOps
 from pytesseract import Output
 
 from ..config import TextConfig
-from ..ffmpeg_tools import ffmpeg
+from ..ffmpeg_tools import ffmpeg, passthrough_args
 from ..findings import Finding, Severity, format_timecode
 from ..spelling import Speller, normalise
 
@@ -168,7 +168,7 @@ def extract_grid(path: Path, duration: float, workdir: Path, cfg: TextConfig) ->
         [
             "-i", str(path),
             "-vf", f"fps=1/{step}",
-            "-vsync", "0",
+            *passthrough_args(),
             "-y", str(pattern),
         ]
     )
@@ -194,7 +194,7 @@ def extract_frames(path: Path, timestamps: list[float], workdir: Path) -> list[S
                 "-ss", f"{timestamp:.3f}",
                 "-i", str(path),
                 "-frames:v", "1",
-                "-vsync", "0",
+                *passthrough_args(),
                 "-y", str(out),
             ]
         )

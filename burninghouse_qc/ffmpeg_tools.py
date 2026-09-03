@@ -7,7 +7,9 @@ dependency surface small on a machine that only ever runs this one service.
 
 from __future__ import annotations
 
+import functools
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -51,6 +53,45 @@ def ffmpeg(args: list[str], timeout: float | None = None) -> subprocess.Complete
 
 def ffprobe(args: list[str], timeout: float | None = None) -> subprocess.CompletedProcess:
     return run([_binary("ffprobe"), "-hide_banner", *args], timeout=timeout)
+
+
+_VERSION = re.compile(r"ffmpeg version n?(?P<major>\d+)\.(?P<minor>\d+)")
+
+
+@functools.lru_cache(maxsize=1)
+def version() -> tuple[int, int] | None:
+    """(major, minor) of the ffmpeg on PATH, or None if it can't be read."""
+    try:
+        proc = run([_binary("ffmpeg"), "-version"], timeout=30)
+    except (FFmpegMissing, subprocess.SubprocessError, OSError):
+        return None
+    match = _VERSION.search(proc.stdout or "")
+    if not match:
+        return None
+    return int(match.group("major")), int(match.group("minor"))
+
+
+@functools.lru_cache(maxsize=1)
+def version_string() -> str:
+    try:
+        proc = run([_binary("ffmpeg"), "-version"], timeout=30)
+    except (FFmpegMissing, subprocess.SubprocessError, OSError):
+        return "unknown"
+    first = (proc.stdout or "").splitlines()
+    return first[0] if first else "unknown"
+
+
+def passthrough_args() -> list[str]:
+    """Ask ffmpeg not to duplicate or drop frames to hit a target rate.
+
+    `-vsync 0` was deprecated in 5.1 in favour of `-fps_mode passthrough`, and
+    warns loudly on 6.x. Newer builds may drop it entirely, so pick by version
+    rather than relying on the old spelling continuing to work.
+    """
+    detected = version()
+    if detected is None or detected >= (5, 1):
+        return ["-fps_mode", "passthrough"]
+    return ["-vsync", "0"]
 
 
 @dataclass
