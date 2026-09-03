@@ -98,9 +98,16 @@ ocr_min_scale     = 1.0            # 1.0 = never downscale
 ocr_max_scale     = 3.0
 
 # Confidence gates — the main false-positive control.
-min_confidence       = 70.0        # below this the token is discarded as noise
-fail_confidence      = 85.0        # at/above this a misspelling can be a FAIL
-fail_min_occurrences = 2           # ...and it must appear in >= N sampled frames
+min_confidence         = 70.0      # below this the token is discarded as noise
+fail_confidence        = 85.0      # at/above this a misspelling can be a FAIL
+
+# Titles animate on, and a frame caught mid-wipe reads the half-revealed super
+# as a word — "nson" from "Branson", "offic" from "office". Those fragments
+# exist for one frame; a real super holds for seconds and is sampled several
+# times. Set to 1 to see everything, at the cost of a flag on most animated
+# lower thirds.
+report_min_occurrences = 2         # frames a word must appear in to be reported
+fail_min_occurrences   = 2         # ...and to be a FAIL rather than a review
 min_word_length      = 4           # shorter tokens are too noisy to trust
 
 

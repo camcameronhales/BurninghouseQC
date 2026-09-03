@@ -325,7 +325,10 @@ def collect_suspects(
                     existing.best_frame = frame
                     existing.best_box = word.box
                     existing.word = normalise(word.text)
-    return sorted(suspects.values(), key=lambda s: s.first_seen)
+    return sorted(
+        (s for s in suspects.values() if s.occurrences >= cfg.report_min_occurrences),
+        key=lambda s: s.first_seen,
+    )
 
 
 def classify(suspect: SuspectWord, cfg: TextConfig) -> tuple[Severity, str]:

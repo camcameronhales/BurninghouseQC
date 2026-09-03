@@ -134,7 +134,13 @@ class TextConfig:
     # Misspelling at or above this confidence can be a clear-cut fail.
     fail_confidence: float = 85.0
     # A suspect word must appear in at least this many sampled frames before it
-    # is treated as a clear-cut fail rather than a review flag.
+    # is reported at all. Titles animate on, and a frame caught mid-wipe reads
+    # the half-revealed super as a word — "nson" from "Branson", "offic" from
+    # "office". Those fragments exist for a single frame; a real super holds
+    # for seconds and is sampled repeatedly. Set to 1 to see everything, at the
+    # cost of a flag on most animated lower thirds.
+    report_min_occurrences: int = 2
+    # ...and at least this many before it is a clear-cut fail rather than review.
     fail_min_occurrences: int = 2
     # Tokens shorter than this are ignored (too noisy from OCR).
     min_word_length: int = 4

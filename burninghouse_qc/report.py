@@ -19,13 +19,16 @@ from .config import ReportConfig
 from .findings import Finding, Severity, Verdict
 from .pipeline import QCResult
 
+# Deliberately says nothing about folders: in the default routing mode there
+# are none, and a report that describes a "pass folder" that does not exist is
+# worse than one that just states the verdict.
 _VERDICT_COPY = {
-    Verdict.PASS: ("PASS", "No issues found. Routed to the pass folder."),
+    Verdict.PASS: ("PASS", "No issues found."),
     Verdict.REVIEW: (
         "NEEDS REVIEW",
         "Borderline or low-confidence flags. A human should look before this ships.",
     ),
-    Verdict.FAIL: ("FAIL", "Clear-cut issues found. Routed to the error folder."),
+    Verdict.FAIL: ("FAIL", "Clear-cut issues found."),
 }
 
 _CSS = """

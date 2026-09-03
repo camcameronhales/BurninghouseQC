@@ -46,7 +46,8 @@ Then classify what you find:
 | Same brand/client word flagged repeatedly | add it to `dictionary/custom_words.txt` — don't touch thresholds |
 | A name in a lower third flagged | should already be skipped by `spelling.skip_proper_nouns`; if a name appears alone with no forename beside it, add it to the dictionary |
 | Head/tail silence or fades reported | they are `info` by default and do not affect the verdict; set `edge_severity = "ignore"` to drop them from the report entirely |
-| A misspelling was missed entirely | lower `text.sample_interval` (denser sampling) |
+| A misspelling was missed entirely | lower `text.sample_interval` (denser sampling), or `text.report_min_occurrences = 1` if it was on screen only briefly |
+| A fragment of a word flagged (`nson`, `offic`) | a frame caught mid-animation; `text.report_min_occurrences` should already suppress it |
 | Intentional cut-to-black failed the file | raise `black.fail_duration` |
 | Deliberate pause failed the file | raise `silence.fail_duration` |
 | Fades flagged at the head/tail | raise `black.edge_grace` / `silence.edge_grace` |
@@ -88,6 +89,14 @@ once tells you nothing about which one mattered.
 - **`fail_confidence` (85)** — the fail gate. A misspelling read *less*
   confidently than this can only ever route to review. This is your main dial
   for "the tool is too aggressive" vs "the tool is too soft".
+- **`report_min_occurrences` (2)** — how many sampled frames a word must
+  appear in before it is reported at all. Titles animate on, and a frame caught
+  mid-wipe reads the half-revealed super as a word: real examples from client
+  work are `nson` (from "Branson"), `offic` (from "office") and `llent`. Those
+  exist for one frame only, while a real super holds for seconds and is sampled
+  several times. Set to `1` to see everything, at the cost of a flag on most
+  animated lower thirds — the trade is that a misspelling on a card shown for
+  less than `sample_interval x 2` may be missed.
 - **`fail_min_occurrences` (2)** — how many separate sampled frames the word
   must appear in before it can fail a file. This is what stops a single bad OCR
   read from failing a render, and it works because a real title card is on

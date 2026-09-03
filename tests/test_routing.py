@@ -285,3 +285,18 @@ def test_destination_dir_covers_every_verdict():
     assert {destination_dir(v, cfg) for v in Verdict} == {
         cfg.paths.passed, cfg.paths.review, cfg.paths.error
     }
+
+
+def test_the_report_does_not_mention_folders_that_do_not_exist(tmp_path):
+    """The default mode has no pass/review/error folders, so a report saying
+    "Routed to the pass folder" describes something that isn't there."""
+    cfg = make_config(tmp_path, mode="alongside")
+    source = tmp_path / "spot.mov"
+    source.write_text("pretend video")
+
+    outcome = route(build_result(source, []), cfg)
+    text = outcome.report.read_text()
+
+    assert "No issues found." in text
+    assert "pass folder" not in text
+    assert "error folder" not in text

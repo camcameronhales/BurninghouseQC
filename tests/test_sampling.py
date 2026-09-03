@@ -1,5 +1,7 @@
 """Frame sampling plan — the thoroughness/runtime trade-off from SPEC.md §6."""
 
+from pathlib import Path
+
 import pytest
 
 from burninghouse_qc.config import TextConfig
@@ -89,3 +91,46 @@ def test_neighbours_are_found_only_on_the_same_line():
     assert neighbours_on_line(words, 1) == ["Simon"]
     assert neighbours_on_line(words, 0) == ["Gullery"]
     assert neighbours_on_line(words, 2) == [], "a different line is not a neighbour"
+
+
+class TestAnimationFragments:
+    """Titles animate on. A frame caught mid-wipe reads the half-revealed super
+    as a word — real examples from client work: "nson" from "Branson", "offic"
+    from "office", "llent" from a longer word. They exist for a single frame.
+    """
+
+    def _suspects(self, words_per_frame, cfg):
+        from burninghouse_qc.config import SpellingConfig
+        from burninghouse_qc.detectors.text import OcrWord, SampledFrame, collect_suspects
+        from burninghouse_qc.spelling import Speller
+
+        frames = []
+        for index, words in enumerate(words_per_frame):
+            frame = SampledFrame(timestamp=index * 1.5, path=Path("/nonexistent.png"))
+            frame.words = [
+                OcrWord(text=w, confidence=90.0, box=(0, 0, 10, 10), line=(1, 1, 1))
+                for w in words
+            ]
+            frames.append(frame)
+        return collect_suspects(frames, Speller(SpellingConfig()), cfg)
+
+    def test_a_one_frame_fragment_is_not_reported(self):
+        cfg = TextConfig()
+        suspects = self._suspects([["nson"], ["clean"], ["clean"]], cfg)
+        assert suspects == []
+
+    def test_a_word_held_across_frames_is_still_reported(self):
+        """A real super holds for seconds and gets sampled repeatedly."""
+        cfg = TextConfig()
+        suspects = self._suspects([["Acheiving"], ["Acheiving"], ["Acheiving"]], cfg)
+        assert [s.word for s in suspects] == ["Acheiving"]
+
+    def test_the_threshold_can_be_lowered_to_see_everything(self):
+        cfg = TextConfig(report_min_occurrences=1)
+        suspects = self._suspects([["nson"], ["clean"], ["clean"]], cfg)
+        assert [s.word for s in suspects] == ["nson"]
+
+    @pytest.mark.parametrize("fragment", ["nson", "offic", "llent"])
+    def test_real_fragments_from_client_work(self, fragment):
+        cfg = TextConfig()
+        assert self._suspects([[fragment], ["unrelated"]], cfg) == []

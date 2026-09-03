@@ -607,3 +607,42 @@ and the watcher now warns when a second watcher is already running against the
 same config, which becomes easy to do once the launchd service is installed.
 
 **Tested:** 277 tests passing.
+
+### Session 12 — 2026-09-04
+
+Re-ran the five MMR interview deliverables with the Session 10 fixes.
+
+**Before:** 4 FAIL, 1 REVIEW, 0 PASS.
+**After:** 3 PASS, 2 REVIEW, 0 FAIL.
+
+Rothberg, Gullery and Walsh are clean — the surname failures are gone and the
+tail handles now show as `info` without affecting the verdict.
+
+Branson and Menzel still had two review flags each, and all four were the same
+new pattern: **fragments of words caught mid-animation**. `nson` (the tail of
+"Branson"), `offic` (the head of "office"), `llent`, and `Nenzel` ("Menzel"
+with the M misread). All at 21–22.5s, i.e. while the lower third wipes on, and
+every one reported as "only in one sampled frame".
+
+`Nenzel` is worth noting: it slipped past the proper-noun rule because
+mid-animation "Kate" was not yet visible, so there was no Title-case neighbour
+to establish it as a name.
+
+Fix: **`text.report_min_occurrences` (default 2)** — a word must appear in at
+least two sampled frames to be reported at all. An animation fragment exists
+for a single frame; a real super holds for seconds and is sampled repeatedly.
+Set to 1 to see everything.
+
+The trade-off, stated plainly: a misspelling on a card shown for less than
+~3 seconds may now be missed. Given the alternative was a flag on essentially
+every animated lower third, and that a single-frame flag could only ever reach
+"review" anyway, this is the right side to err on — but it is the first change
+that genuinely reduces sensitivity rather than just cutting noise.
+
+**Also fixed:** the report said "Routed to the pass folder" / "Routed to the
+error folder" — folders that do not exist in the default routing mode. The
+verdict note now states the verdict without describing filing that does not
+happen.
+
+**Tested:** 284 tests passing (up from 277), including the four real fragments
+from this client work as regression cases.
