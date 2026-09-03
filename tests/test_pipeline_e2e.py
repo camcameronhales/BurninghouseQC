@@ -193,5 +193,7 @@ def test_sample_generation_needs_no_optional_ffmpeg_filters(tmp_path):
     generated = _render(tmp_path / "sample.mp4", clean=True)
     assert generated.exists() and generated.stat().st_size > 0
 
+    # `drawtext` still appears in comments explaining why it is avoided; what
+    # must not appear is the filter invocation itself.
     source = MAKE_SAMPLE.read_text()
-    assert "drawtext" not in source, "title cards are rendered with Pillow, not drawtext"
+    assert "drawtext=" not in source, "title cards are rendered with Pillow, not drawtext"
