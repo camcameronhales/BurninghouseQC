@@ -162,6 +162,15 @@ Then start the watcher in the foreground, so you can watch it work:
 You'll see each file noticed, waited on, checked and filed. <kbd>Ctrl-C</kbd>
 stops it.
 
+**The watcher takes over that Terminal window** while it runs. To add files
+while it's watching, open a second window with <kbd>⌘N</kbd>. Or simpler for a
+first run: copy the files in first, then start it — anything already sitting in
+the folder is picked up at start-up.
+
+It tells you what it found on start-up: how many files it queued, how many it
+is ignoring because they are not `.mov` or `.mp4`, and how many it has already
+checked. If it says the folder is empty, it is.
+
 Expect roughly **30 seconds of QC per minute of video**, so a 10-minute master
 lands around 5 minutes. Each file also sits for ~15 seconds first while the app
 confirms it's finished writing.
@@ -259,7 +268,9 @@ select, metadata and fps — all present in every normal build.
 
 **A file sits in input and nothing happens** — it must be `.mov` or `.mp4`
 (add others to `watcher.video_extensions`), and it must have been unchanged for
-~15 seconds. Check it isn't in `processed.json` already: `bhqc ... forget FILE`.
+~15 seconds. Restart the watcher and read its start-up lines: it says how many
+files it queued, how many it ignored and why, and how many it had already
+checked (`bhqc ... forget FILE` re-checks one).
 
 **Every file comes back with spelling flags** — the dictionary path is probably
 wrong. `bhqc ... doctor` prints the path and the word count; it should say 20+

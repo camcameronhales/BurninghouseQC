@@ -69,15 +69,64 @@ class QCService:
 
     # -- queueing ---------------------------------------------------------
     def enqueue_existing(self) -> None:
-        """Catch up on anything already sitting in /input at start-up."""
-        for path in sorted(self.cfg.paths.input.iterdir()):
-            if not (path.is_file() and is_candidate(path, self.cfg.watcher)):
-                continue
+        """Catch up on anything already sitting in /input at start-up.
+
+        Also says plainly what it found. An idle watcher looks identical
+        whether the folder is empty, full of files in a format it ignores, or
+        full of files it has already checked — and guessing which is not the
+        operator's job.
+        """
+        files = [path for path in sorted(self.cfg.paths.input.iterdir()) if path.is_file()]
+        visible = [
+            path
+            for path in files
+            if not any(path.name.startswith(prefix) for prefix in self.cfg.watcher.ignore_prefixes)
+        ]
+        candidates = [path for path in visible if is_candidate(path, self.cfg.watcher)]
+        wrong_format = [path for path in visible if path not in candidates]
+
+        queued = 0
+        already_done = 0
+        for path in candidates:
             if self.ledger.seen(path):
-                self.logger.debug("Already checked, skipping %s", path.name)
+                already_done += 1
                 continue
             self.logger.info("Queueing pre-existing file %s", path.name)
             self.queue.put(path)
+            queued += 1
+
+        if not visible:
+            self.logger.info(
+                "Input folder is empty — drop %s files in and they will be picked up.",
+                " or ".join(self.cfg.watcher.video_extensions),
+            )
+        elif wrong_format and not candidates:
+            extensions = sorted({path.suffix.lower() or "(no extension)" for path in wrong_format})
+            self.logger.warning(
+                "%d file(s) in the input folder, but none are %s — found %s. "
+                "Add the extension to watcher.video_extensions to include them.",
+                len(wrong_format),
+                " or ".join(self.cfg.watcher.video_extensions),
+                ", ".join(extensions),
+            )
+        else:
+            if queued:
+                self.logger.info("Queued %d file(s) already in the input folder.", queued)
+            if already_done:
+                self.logger.info(
+                    "Skipped %d file(s) already checked — 'bhqc forget FILE' to re-check.",
+                    already_done,
+                )
+            if wrong_format:
+                extensions = sorted({path.suffix.lower() or "(none)" for path in wrong_format})
+                self.logger.info(
+                    "Ignoring %d file(s) that are not %s (%s).",
+                    len(wrong_format),
+                    " or ".join(self.cfg.watcher.video_extensions),
+                    ", ".join(extensions),
+                )
+            if not queued and not already_done:
+                self.logger.info("Nothing to do yet — waiting for new files.")
 
     # -- processing -------------------------------------------------------
     def process(self, path: Path) -> None:
