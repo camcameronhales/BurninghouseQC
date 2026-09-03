@@ -252,6 +252,11 @@ or run `eval "$(/opt/homebrew/bin/brew shellenv)"`.
 FFmpeg than this was tested on. `bhqc ... doctor` prints the exact version;
 send me that line and the error.
 
+**"No such filter"** — the FFmpeg build is missing something. `bhqc ... doctor`
+lists which of the required filters are absent; `brew reinstall ffmpeg` gets a
+full build. Note the QC pipeline itself needs only blackdetect, silencedetect,
+select, metadata and fps — all present in every normal build.
+
 **A file sits in input and nothing happens** — it must be `.mov` or `.mp4`
 (add others to `watcher.video_extensions`), and it must have been unchanged for
 ~15 seconds. Check it isn't in `processed.json` already: `bhqc ... forget FILE`.

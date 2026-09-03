@@ -185,3 +185,13 @@ def test_no_deprecated_flags_reach_ffmpeg(media, tmp_path):
     ]
     assert complaints == [], complaints
     assert list(out_dir.glob("f_*.png")), "frames should have been written"
+
+
+def test_sample_generation_needs_no_optional_ffmpeg_filters(tmp_path):
+    """The generator must not depend on drawtext: it needs libfreetype and
+    libharfbuzz compiled in, and Homebrew's ffmpeg ships without it."""
+    generated = _render(tmp_path / "sample.mp4", clean=True)
+    assert generated.exists() and generated.stat().st_size > 0
+
+    source = MAKE_SAMPLE.read_text()
+    assert "drawtext" not in source, "title cards are rendered with Pillow, not drawtext"

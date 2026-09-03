@@ -214,3 +214,68 @@ def test_version_parsing(monkeypatch, banner, expected):
         assert ffmpeg_tools.version() == expected
     finally:
         ffmpeg_tools.version.cache_clear()
+
+
+# -- ffmpeg filter availability ------------------------------------------
+
+FILTERS_OUTPUT = """Filters:
+  T.. = Timeline support
+ ... blackdetect       V->V       Detect video intervals that are (almost) black.
+ ... silencedetect     A->A       Detect silence.
+ ... select            V->N       Select video frames to pass in output.
+ ... metadata          V->V       Manipulate video frame metadata.
+ ... fps               V->V       Force constant framerate.
+ T.C drawtext          V->V       Draw text on top of video frames.
+"""
+
+
+def test_filter_list_is_parsed(monkeypatch):
+    from burninghouse_qc import ffmpeg_tools
+
+    class FakeProc:
+        stdout = FILTERS_OUTPUT
+
+    ffmpeg_tools.available_filters.cache_clear()
+    monkeypatch.setattr(ffmpeg_tools, "run", lambda *a, **k: FakeProc())
+    monkeypatch.setattr(ffmpeg_tools, "_binary", lambda name: f"/usr/bin/{name}")
+    try:
+        found = ffmpeg_tools.available_filters()
+        assert "blackdetect" in found and "silencedetect" in found
+        assert ffmpeg_tools.missing_filters() == []
+    finally:
+        ffmpeg_tools.available_filters.cache_clear()
+
+
+def test_a_build_missing_a_required_filter_is_reported(monkeypatch):
+    """Homebrew's ffmpeg ships without drawtext; other builds drop other things.
+    A missing filter must surface in doctor, not halfway through a job."""
+    from burninghouse_qc import ffmpeg_tools
+
+    class FakeProc:
+        stdout = FILTERS_OUTPUT.replace(
+            " ... blackdetect       V->V       Detect video intervals that are (almost) black.\n",
+            "",
+        )
+
+    ffmpeg_tools.available_filters.cache_clear()
+    monkeypatch.setattr(ffmpeg_tools, "run", lambda *a, **k: FakeProc())
+    monkeypatch.setattr(ffmpeg_tools, "_binary", lambda name: f"/usr/bin/{name}")
+    try:
+        assert ffmpeg_tools.missing_filters() == ["blackdetect"]
+    finally:
+        ffmpeg_tools.available_filters.cache_clear()
+
+
+def test_an_unreadable_filter_list_does_not_invent_problems(monkeypatch):
+    from burninghouse_qc import ffmpeg_tools
+
+    def boom(*args, **kwargs):
+        raise OSError("ffmpeg went missing")
+
+    ffmpeg_tools.available_filters.cache_clear()
+    monkeypatch.setattr(ffmpeg_tools, "run", boom)
+    monkeypatch.setattr(ffmpeg_tools, "_binary", lambda name: f"/usr/bin/{name}")
+    try:
+        assert ffmpeg_tools.missing_filters() == []
+    finally:
+        ffmpeg_tools.available_filters.cache_clear()

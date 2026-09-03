@@ -81,6 +81,36 @@ def version_string() -> str:
     return first[0] if first else "unknown"
 
 
+# Every filter the QC pipeline depends on. FFmpeg builds vary widely in what
+# is compiled in — Homebrew's, for instance, ships without drawtext — so this
+# is worth checking up front rather than discovering it mid-job.
+REQUIRED_FILTERS = ("blackdetect", "silencedetect", "select", "metadata", "fps")
+
+
+@functools.lru_cache(maxsize=1)
+def available_filters() -> frozenset[str]:
+    """Filter names this ffmpeg build actually has."""
+    try:
+        proc = run([_binary("ffmpeg"), "-hide_banner", "-filters"], timeout=60)
+    except (FFmpegMissing, subprocess.SubprocessError, OSError):
+        return frozenset()
+    names: set[str] = set()
+    for line in (proc.stdout or "").splitlines():
+        # Lines look like: " ... blackdetect       V->V       Detect ..."
+        parts = line.split()
+        if len(parts) >= 3 and not line.startswith("Filters:"):
+            names.add(parts[1])
+    return frozenset(names)
+
+
+def missing_filters(required: tuple[str, ...] = REQUIRED_FILTERS) -> list[str]:
+    """Which required filters this build lacks. Empty if it can't be determined."""
+    found = available_filters()
+    if not found:
+        return []
+    return [name for name in required if name not in found]
+
+
 def passthrough_args() -> list[str]:
     """Ask ffmpeg not to duplicate or drop frames to hit a target rate.
 

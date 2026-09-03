@@ -23,7 +23,10 @@ import argparse
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
 
 FONT_CANDIDATES = [
     # macOS — Supplemental is where Arial and friends live on modern versions.
@@ -94,8 +97,37 @@ def find_font() -> str:
     )
 
 
-def escape(text: str) -> str:
-    return text.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+def render_card(text: str, size: tuple[int, int], font_path: str, out: Path) -> Path:
+    """Draw a title card as a transparent PNG.
+
+    Text is burnt in with Pillow rather than FFmpeg's drawtext, because
+    drawtext needs libfreetype and libharfbuzz compiled into FFmpeg and plenty
+    of builds — Homebrew's included — ship without it. Pillow is already a
+    dependency of the app, and reads the same system font files.
+    """
+    width, height = size
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+
+    font_size = max(18, round(height * 0.075))
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except OSError:
+        font = ImageFont.load_default()
+
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    text_w, text_h = right - left, bottom - top
+    x = (width - text_w) // 2 - left
+    y = (height - text_h) // 2 - top
+
+    pad = round(font_size * 0.45)
+    draw.rectangle(
+        [x - pad, y - pad, x + text_w + pad, y + text_h + pad],
+        fill=(0, 0, 0, 140),
+    )
+    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+    image.save(out)
+    return out
 
 
 def cards_for(duration: float, clean: bool) -> list[tuple[float, float, str]]:
@@ -111,54 +143,66 @@ def cards_for(duration: float, clean: bool) -> list[tuple[float, float, str]]:
 
 
 def build(out: Path, clean: bool, font: str, duration: float, size: str) -> None:
-    cards = cards_for(duration, clean)
-    filters = [
-        # A mid-grey base with a moving element so scene detection has something
-        # to work with, then the title cards burnt in.
-        "[0:v]format=yuv420p[base]",
-    ]
-    chain = "[base]"
-    for index, (start, end, text) in enumerate(cards):
-        label = f"[t{index}]"
-        filters.append(
-            f"{chain}drawtext=fontfile='{font}':text='{escape(text)}':"
-            f"fontcolor=white:fontsize=54:x=(w-text_w)/2:y=(h-text_h)/2:"
-            f"box=1:boxcolor=black@0.55:boxborderw=24:"
-            f"enable='between(t,{start},{end})'{label}"
-        )
-        chain = label
-    if not clean:
-        filters.append(
-            f"{chain}drawbox=x=0:y=0:w=iw:h=ih:color=black@1.0:t=fill:"
-            f"enable='between(t,{BLACK_FROM},{BLACK_TO})'[vout]"
-        )
-    else:
-        filters.append(f"{chain}null[vout]")
-
-    audio_filter = "[1:a]anull[aout]"
-    if not clean:
-        audio_filter = (
-            f"[1:a]volume=enable='between(t,{SILENT_FROM},{SILENT_TO})':volume=0[aout]"
-        )
-    filters.append(audio_filter)
-
-    args = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-f", "lavfi", "-i", f"testsrc2=size={size}:rate=25:duration={duration}",
-        "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={duration}",
-        "-filter_complex", ";".join(filters),
-        "-map", "[vout]", "-map", "[aout]",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "128k",
-        "-t", str(duration),
-        str(out),
-    ]
     if not shutil.which("ffmpeg"):
         raise SystemExit("ffmpeg not found on PATH.")
-    proc = subprocess.run(args, capture_output=True, text=True)
-    if proc.returncode != 0:
-        sys.stderr.write(proc.stderr)
-        raise SystemExit(f"ffmpeg failed ({proc.returncode})")
+
+    cards = cards_for(duration, clean)
+    width, height = (int(part) for part in size.lower().split("x"))
+
+    with tempfile.TemporaryDirectory(prefix="bhqc_cards_") as scratch:
+        card_paths = [
+            render_card(text, (width, height), font, Path(scratch) / f"card{index:03d}.png")
+            for index, (_, _, text) in enumerate(cards)
+        ]
+
+        inputs: list[str] = [
+            "-f", "lavfi", "-i", f"testsrc2=size={size}:rate=25:duration={duration}",
+            "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={duration}",
+        ]
+        for card in card_paths:
+            inputs += ["-i", str(card)]
+
+        # A busy base so scene detection has something to work with, then each
+        # card composited over it for its own window.
+        filters = ["[0:v]format=yuv420p[base]"]
+        chain = "[base]"
+        for index, (start, end, _) in enumerate(cards):
+            label = f"[t{index}]"
+            stream = index + 2          # inputs 0 and 1 are video and audio
+            filters.append(
+                f"{chain}[{stream}:v]overlay=0:0:enable='between(t,{start},{end})'{label}"
+            )
+            chain = label
+
+        if not clean:
+            filters.append(
+                f"{chain}drawbox=x=0:y=0:w=iw:h=ih:color=black@1.0:t=fill:"
+                f"enable='between(t,{BLACK_FROM},{BLACK_TO})'[vout]"
+            )
+        else:
+            filters.append(f"{chain}null[vout]")
+
+        if clean:
+            filters.append("[1:a]anull[aout]")
+        else:
+            filters.append(
+                f"[1:a]volume=enable='between(t,{SILENT_FROM},{SILENT_TO})':volume=0[aout]"
+            )
+
+        args = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            *inputs,
+            "-filter_complex", ";".join(filters),
+            "-map", "[vout]", "-map", "[aout]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k",
+            "-t", str(duration),
+            str(out),
+        ]
+        proc = subprocess.run(args, capture_output=True, text=True)
+        if proc.returncode != 0:
+            sys.stderr.write(proc.stderr)
+            raise SystemExit(f"ffmpeg failed ({proc.returncode})")
 
 
 def main() -> None:

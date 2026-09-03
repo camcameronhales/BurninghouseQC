@@ -276,12 +276,21 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         problems += 0 if found else 1
 
     if shutil.which("ffmpeg"):
-        from .ffmpeg_tools import version, version_string
+        from .ffmpeg_tools import REQUIRED_FILTERS, missing_filters, version, version_string
 
         detected = version()
         print(f"  {'version':<10} {version_string()}")
         if detected and detected < (4, 3):
             print("             WARNING: 4.3+ is needed for the filters this uses.")
+
+        absent = missing_filters()
+        if absent:
+            print(f"  {'filters':<10} MISSING: {', '.join(absent)}")
+            print("             This FFmpeg build cannot run the QC pipeline.")
+            print("             Reinstall a full build:  brew reinstall ffmpeg")
+            problems += 1
+        else:
+            print(f"  {'filters':<10} all {len(REQUIRED_FILTERS)} required filters present")
 
     try:
         import pytesseract
