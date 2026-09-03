@@ -17,7 +17,31 @@ def test_init_creates_a_working_config_and_folders(tmp_path):
 
     assert config.exists()
     cfg = Config.load(config)
-    for folder in (cfg.paths.input, cfg.paths.passed, cfg.paths.review, cfg.paths.error):
+    assert cfg.paths.input.is_dir()
+    assert cfg.paths.work.is_dir()
+
+
+def test_init_makes_no_verdict_folders_in_the_default_mode(tmp_path):
+    """The default files reports beside each render, so pass/review/error
+    would sit empty forever."""
+    config = tmp_path / "config.toml"
+    main(["init", "-o", str(config)])
+    cfg = Config.load(config)
+
+    assert cfg.routing.mode == "alongside"
+    for folder in (cfg.paths.passed, cfg.paths.review, cfg.paths.error):
+        assert not folder.exists(), f"{folder.name} should not have been created"
+
+
+def test_init_makes_verdict_folders_when_a_mode_needs_them(tmp_path):
+    config = tmp_path / "config.toml"
+    main(["init", "-o", str(config)])
+    text = config.read_text().replace('mode = "alongside"', 'mode = "report_only"')
+    config.write_text(text)
+
+    main(["-c", str(config), "init", "-o", str(config), "--force"])
+    cfg = Config.load(config)
+    for folder in (cfg.paths.passed, cfg.paths.review, cfg.paths.error):
         assert folder.is_dir()
 
 

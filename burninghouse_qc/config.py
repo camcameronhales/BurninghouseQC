@@ -27,11 +27,20 @@ class Paths:
     # whole input folder every time the service restarts.
     ledger_file: Path = Path("qc_root/processed.json")
 
-    def ensure(self) -> None:
-        for d in (self.input, self.passed, self.review, self.error, self.work):
-            d.mkdir(parents=True, exist_ok=True)
-        for f in (self.status_file, self.log_file):
-            f.parent.mkdir(parents=True, exist_ok=True)
+    def ensure(self, verdict_folders: bool = True) -> None:
+        """Create the folders the app needs.
+
+        The pass/review/error folders are only made when a routing mode
+        actually files things into them — in "alongside" they would sit empty
+        forever, which is exactly the clutter that mode exists to avoid.
+        """
+        needed = [self.input, self.work]
+        if verdict_folders:
+            needed += [self.passed, self.review, self.error]
+        for directory in needed:
+            directory.mkdir(parents=True, exist_ok=True)
+        for file in (self.status_file, self.log_file):
+            file.parent.mkdir(parents=True, exist_ok=True)
 
 
 @dataclass
@@ -150,22 +159,23 @@ class SpellingConfig:
 
 @dataclass
 class RoutingConfig:
-    """What the app is allowed to do to the source file.
+    """What the app does with the render and where the report goes.
 
-    "report_only" is the default because renders land on a shared server, and
-    a QC tool has no business moving other people's masters around. The other
-    two modes exist for a QC folder the app owns outright.
+    "alongside" is the default: reports are read whatever the verdict, so they
+    belong next to the file they describe rather than filed away in one of
+    three folders. The render itself is never moved.
     """
 
-    # "report_only" — never touch the render; write the report to the verdict
-    #                 folder and leave the file exactly where it is.
+    # "alongside"   — write the report next to the render. No sorting folders,
+    #                 no file movement. The verdict is inside the report.
+    # "report_only" — leave the render, file the report in pass/review/error.
     # "copy"        — leave the original, put a verified copy in the verdict
     #                 folder.
     # "move"        — relocate the render into the verdict folder.
-    mode: str = "report_only"
-    # In report_only mode, also drop a symlink in the verdict folder pointing at
-    # the original, so staff can open the file from there. Best-effort.
-    symlink_in_verdict_folder: bool = True
+    mode: str = "alongside"
+    # For the verdict-folder modes: drop a symlink beside the report pointing at
+    # the original. Irrelevant in "alongside", where they are already together.
+    symlink_in_verdict_folder: bool = False
     # Checksum a copy against its source before trusting it. Doubles the read
     # cost of a copy; worth it if the app is ever set to "move".
     verify_hash: bool = False
@@ -183,8 +193,12 @@ class ReportConfig:
     # Thumbnails are embedded as base64 so a report is a single portable file.
     thumbnail_width: int = 480
     max_thumbnails: int = 60
-    # Also drop a machine-readable sidecar next to the HTML.
-    write_json: bool = True
+    # A machine-readable sidecar next to the HTML. Off by default — it is
+    # clutter next to a render unless something is actually consuming it.
+    write_json: bool = False
+    # Put the verdict in the report's filename ("Spot [FAIL].qc.html") so a
+    # folder listing can be triaged without opening anything.
+    verdict_in_filename: bool = False
 
 
 @dataclass
@@ -198,6 +212,12 @@ class Config:
     routing: RoutingConfig = field(default_factory=RoutingConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
     source_path: Path | None = None
+
+    def uses_verdict_folders(self) -> bool:
+        return (self.routing.mode or "alongside").strip().lower() != "alongside"
+
+    def ensure_paths(self) -> None:
+        self.paths.ensure(verdict_folders=self.uses_verdict_folders())
 
     @classmethod
     def load(cls, path: str | Path | None) -> "Config":

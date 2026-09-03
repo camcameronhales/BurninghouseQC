@@ -74,6 +74,7 @@ def make_config(tmp_path, mode="report_only") -> Config:
     cfg.paths.work = tmp_path / "work"
     cfg.routing.mode = mode
     cfg.routing.symlink_in_verdict_folder = False
+    cfg.report.write_json = True   # most routing tests assert on the sidecar
     return cfg
 
 

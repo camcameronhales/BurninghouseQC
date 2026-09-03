@@ -32,7 +32,11 @@ def cfg(tmp_path) -> Config:
     config.paths.work = tmp_path / "qc" / "work"
     config.paths.status_file = tmp_path / "qc" / "status.json"
     config.paths.log_file = tmp_path / "qc" / "qc.log"
+    config.paths.ledger_file = tmp_path / "qc" / "processed.json"
     config.paths.input.mkdir(parents=True)
+    # Most of these checks are about the verdict-folder modes; the alongside
+    # default is exercised by its own tests below.
+    config.routing.mode = "report_only"
     return config
 
 
@@ -132,6 +136,16 @@ def test_qc_folders_are_created_and_verified(cfg):
     assert cfg.paths.passed.exists() and cfg.paths.work.exists()
 
 
+def test_alongside_mode_does_not_require_verdict_folders(cfg):
+    """They would sit empty forever, which is the clutter that mode avoids."""
+    cfg.routing.mode = "alongside"
+    checks = check_qc_folders(cfg)
+    names = {c.name for c in checks}
+    assert "pass folder" not in names
+    assert "work folder" in names
+    assert not cfg.paths.passed.exists()
+
+
 def test_an_unwritable_qc_folder_is_fatal(cfg, monkeypatch):
     monkeypatch.setattr(access, "probe_write", lambda _p: (False, "writes refused"))
     checks = check_qc_folders(cfg)
@@ -179,3 +193,46 @@ def test_a_correctly_configured_account_passes_cleanly(cfg, monkeypatch):
     monkeypatch.setattr(access, "probe_write", probe)
     checks = run_all(cfg)
     assert [c for c in checks if c.status in (Status.FAIL, Status.WARN)] == []
+
+
+# -- alongside mode: reports are written next to the render --------------
+
+def test_alongside_needs_a_writable_input_folder(cfg, monkeypatch):
+    """The report goes beside the render, so a read-only folder is fatal —
+    and the message has to say what to do about it."""
+    cfg.routing.mode = "alongside"
+    monkeypatch.setattr(access, "probe_write", lambda _p: (False, "writes refused"))
+
+    checks = check_input_folder(cfg)
+    check = next(c for c in checks if c.name == "input folder is writable")
+    assert check.status is Status.FAIL
+    assert "report_only" in (check.advice or ""), "it must name the alternative"
+
+
+def test_alongside_is_happy_with_a_writable_folder(cfg, monkeypatch):
+    cfg.routing.mode = "alongside"
+    monkeypatch.setattr(access, "probe_write", lambda _p: (True, "writes are permitted"))
+    checks = check_input_folder(cfg)
+    assert all(c.status is Status.OK for c in checks)
+
+
+def test_alongside_on_a_writable_share_is_not_warned_about(cfg, monkeypatch):
+    """Writable is a requirement in this mode, not something to tighten."""
+    cfg.routing.mode = "alongside"
+    monkeypatch.setattr(access, "probe_write", lambda _p: (True, "writes are permitted"))
+    monkeypatch.setattr(access, "is_network_path", lambda _p: True)
+    checks = check_input_folder(cfg)
+    assert all(c.status is Status.OK for c in checks)
+
+
+def test_alongside_against_a_read_only_folder_fails_the_mode_check(cfg):
+    cfg.routing.mode = "alongside"
+    check = check_routing_consistency(cfg, input_writable=False)[0]
+    assert check.status is Status.FAIL
+    assert "report_only" in (check.advice or "")
+
+
+def test_alongside_mode_check_passes_when_writable(cfg):
+    cfg.routing.mode = "alongside"
+    check = check_routing_consistency(cfg, input_writable=True)[0]
+    assert check.status is Status.OK

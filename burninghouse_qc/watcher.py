@@ -200,7 +200,7 @@ class QCService:
 
     # -- lifecycle --------------------------------------------------------
     def run(self) -> None:
-        self.cfg.paths.ensure()
+        self.cfg.ensure_paths()
         self.logger.info("Burninghouse QC watching %s", self.cfg.paths.input)
         self.status.update(state="idle", current_file=None, queued=0)
 

@@ -67,8 +67,14 @@ def probe_write(path: Path) -> tuple[bool, str]:
     return True, "writes are permitted"
 
 
+def writes_beside_renders(cfg: Config) -> bool:
+    """True when the routing mode puts the report next to the render."""
+    return (cfg.routing.mode or "alongside").strip().lower() == "alongside"
+
+
 def check_input_folder(cfg: Config, write_probe: bool = True) -> list[Check]:
     path = cfg.paths.input
+    needs_write = writes_beside_renders(cfg)
     checks: list[Check] = []
 
     readable, detail = _readable(path)
@@ -105,12 +111,34 @@ def check_input_folder(cfg: Config, write_probe: bool = True) -> list[Check]:
         return checks
 
     wrote, detail = probe_write(path)
-    if not wrote:
+    if not wrote and needs_write:
+        checks.append(
+            Check(
+                name="input folder is writable",
+                status=Status.FAIL,
+                detail=f"NO — {detail}",
+                advice=(
+                    'routing.mode = "alongside" writes each report next to its '
+                    "render, so this folder has to be writable. Either grant "
+                    'write access, or switch to mode = "report_only" to file '
+                    "reports in a separate folder instead."
+                ),
+            )
+        )
+    elif not wrote:
         checks.append(
             Check(
                 name="input folder is read-only",
                 status=Status.OK,
                 detail=f"YES — {detail}",
+            )
+        )
+    elif needs_write:
+        checks.append(
+            Check(
+                name="input folder is writable",
+                status=Status.OK,
+                detail=f"{detail} — required, reports are written beside each render",
             )
         )
     elif on_network:
@@ -145,13 +173,17 @@ def check_input_folder(cfg: Config, write_probe: bool = True) -> list[Check]:
 def check_qc_folders(cfg: Config) -> list[Check]:
     """Everything the app must be able to write to."""
     targets = {
-        "pass folder": cfg.paths.passed,
-        "review folder": cfg.paths.review,
-        "error folder": cfg.paths.error,
         "work folder": cfg.paths.work,
         "status/ledger folder": cfg.paths.status_file.parent,
         "log folder": cfg.paths.log_file.parent,
     }
+    if cfg.uses_verdict_folders():
+        targets = {
+            "pass folder": cfg.paths.passed,
+            "review folder": cfg.paths.review,
+            "error folder": cfg.paths.error,
+            **targets,
+        }
     checks: list[Check] = []
     for name, path in targets.items():
         try:
@@ -180,7 +212,26 @@ def check_qc_folders(cfg: Config) -> list[Check]:
 
 def check_routing_consistency(cfg: Config, input_writable: bool | None) -> list[Check]:
     """Catch a config that asks for something the permissions forbid."""
-    mode = (cfg.routing.mode or "report_only").strip().lower()
+    mode = (cfg.routing.mode or "alongside").strip().lower()
+    if mode == "alongside":
+        if input_writable is False:
+            return [
+                Check(
+                    name="routing mode",
+                    status=Status.FAIL,
+                    detail="alongside — but the input folder is not writable, so "
+                           "no report can be written",
+                    advice='Switch to mode = "report_only", or grant write access.',
+                )
+            ]
+        return [
+            Check(
+                name="routing mode",
+                status=Status.OK,
+                detail="alongside — the report is written next to each render; "
+                       "nothing is moved",
+            )
+        ]
     if mode == "report_only":
         return [
             Check(
@@ -232,11 +283,12 @@ def run_all(cfg: Config, write_probe: bool = True) -> list[Check]:
     checks = check_input_folder(cfg, write_probe=write_probe)
     input_writable: bool | None = None
     for check in checks:
-        if check.name == "input folder is read-only":
-            if check.status is Status.OK:
-                input_writable = False
-            elif check.status is Status.WARN:
-                input_writable = True
+        if check.name == "input folder is read-only" and check.status is Status.OK:
+            input_writable = False
+        elif check.name == "input folder is read-only" and check.status is Status.WARN:
+            input_writable = True
+        elif check.name == "input folder is writable":
+            input_writable = check.status is not Status.FAIL
     checks += check_qc_folders(cfg)
     checks += check_routing_consistency(cfg, input_writable)
     return checks

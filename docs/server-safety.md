@@ -5,11 +5,25 @@ do to my files?" needs to be short, specific and checkable. Here it is.
 
 ## The short version
 
-**In the default configuration, the app never writes to, moves, renames or
-deletes anything on the server. It opens renders read-only and writes its
-reports somewhere else entirely.**
+**The app never moves, renames, alters or deletes a render.** That holds in
+every mode, and is the guarantee that actually matters.
 
-That is enforced by `routing.mode = "report_only"`, which ships as the default.
+What differs between modes is *where the report goes*:
+
+- **`alongside`** (the default) writes `<name>.qc.html` next to the render.
+  On a shared server that is a write to the server — a few hundred KB of HTML
+  per file, in the same folder as the render.
+- **`report_only`** writes nothing beside the render. Reports are filed in
+  separate pass/review/error folders and the watched folder is never written
+  to at all.
+
+**For the Synology, this is a decision to make.** `alongside` is more
+convenient — the report travels with the file and anyone opening the folder can
+see it. `report_only` keeps the share strictly read-only. Both leave the
+renders themselves untouched. If you want the share read-only at the
+filesystem level (see [`readonly-account.md`](readonly-account.md)), you must
+use `report_only`; `bhqc check-access` fails loudly if the mode and the
+permissions disagree.
 
 ## Every operation the app performs on a source render
 
@@ -18,8 +32,8 @@ That is enforced by `routing.mode = "report_only"`, which ships as the default.
 | `stat()` — size and mtime | while waiting for the render to finish writing | nothing |
 | open + read | FFmpeg decoding for QC | nothing |
 | copy to local scratch | if the input folder is on a network mount | the *local* work folder |
-| write report | after QC | the pass/review/error folder |
-| write symlink | after QC, optional | the pass/review/error folder |
+| write report | after QC | beside the render (`alongside`) or the verdict folder (`report_only`) |
+| write symlink | after QC, optional, verdict-folder modes only | the pass/review/error folder |
 
 There is no other code path that touches the source. The one function that can
 delete a source file is `transfer.safe_move`, and it is unreachable unless you

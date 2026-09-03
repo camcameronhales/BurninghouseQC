@@ -1,11 +1,15 @@
 """Filing a checked render: the report always, the file itself only if asked.
 
-Three modes, set by `routing.mode`:
+Four modes, set by `routing.mode`:
 
-  report_only  the render is never touched. The report goes to the verdict
-               folder, optionally beside a symlink pointing at the original.
-               This is the default, and the only mode that is safe to point at
-               a shared server.
+  alongside    the default. The report is written next to the render, and
+               nothing is moved or sorted. Reports get read whatever the
+               verdict, so they belong with the file they describe; the verdict
+               is inside the report. This is the only mode that writes into the
+               folder being watched.
+  report_only  the render is never touched and nothing is written beside it;
+               the report is filed in pass/review/error instead. Use this when
+               the watched folder must stay untouched.
   copy         the original stays put; a verified copy lands in the verdict
                folder.
   move         the render is relocated into the verdict folder.
@@ -26,10 +30,11 @@ from .pipeline import QCResult
 from .report import write_report
 from .transfer import FileSnapshot, TransferError, safe_copy, safe_move
 
+ALONGSIDE = "alongside"
 REPORT_ONLY = "report_only"
 COPY = "copy"
 MOVE = "move"
-VALID_MODES = (REPORT_ONLY, COPY, MOVE)
+VALID_MODES = (ALONGSIDE, REPORT_ONLY, COPY, MOVE)
 
 
 @dataclass
@@ -70,14 +75,14 @@ def unique_path(target: Path) -> Path:
 
 
 def resolve_mode(cfg: Config, move: bool | None = None) -> str:
-    """`move=False` from the CLI forces report_only regardless of config."""
-    if move is False:
-        return REPORT_ONLY
-    mode = (cfg.routing.mode or REPORT_ONLY).strip().lower()
+    """`move=False` from the CLI forces a non-moving mode regardless of config."""
+    mode = (cfg.routing.mode or ALONGSIDE).strip().lower()
     if mode not in VALID_MODES:
         raise ValueError(
             f"routing.mode must be one of {', '.join(VALID_MODES)} — got {mode!r}"
         )
+    if move is False and mode in (COPY, MOVE):
+        return ALONGSIDE
     return mode
 
 
@@ -121,8 +126,9 @@ def route(
     copied and the caller is warned.
     """
     mode = resolve_mode(cfg, move)
-    target_dir = destination_dir(result.verdict, cfg)
-    target_dir.mkdir(parents=True, exist_ok=True)
+    if mode != ALONGSIDE:
+        target_dir = destination_dir(result.verdict, cfg)
+        target_dir.mkdir(parents=True, exist_ok=True)
 
     warning: str | None = None
     if source_snapshot is not None and result.source.exists():
@@ -131,7 +137,22 @@ def route(
                 f"{result.source.name} changed while it was being checked — this "
                 f"report describes the earlier version, and the file was left alone."
             )
-            mode = REPORT_ONLY
+            # Do not relocate a file we no longer understand; still report on it.
+            if mode in (COPY, MOVE):
+                mode = ALONGSIDE
+
+    if mode == ALONGSIDE:
+        # The report lives with the render. Nothing is moved, nothing is sorted.
+        target_dir = result.source.parent
+        stem = unique_stem(target_dir, result.source.stem, (".qc.html",))
+        report_path = write_report(result, target_dir, cfg.report, stem=stem)
+        return RouteOutcome(
+            verdict=result.verdict,
+            destination=result.source,
+            report=report_path,
+            action="left_in_place",
+            warning=warning,
+        )
 
     if mode == REPORT_ONLY:
         stem = unique_stem(

@@ -113,19 +113,21 @@ require_normal_case = true
 
 
 [routing]
-# What the app is allowed to do to the source render. READ docs/server-safety.md
-# before changing this.
+# Where the report goes and what happens to the render.
 #
-#   "report_only" — never touch the render. Write the report to the verdict
-#                   folder and leave the file exactly where it is. The only
-#                   mode that is safe to point at shared storage.
+#   "alongside"   — write the report next to the render, named <file>.qc.html.
+#                   Nothing is moved and no sorting folders are used; the
+#                   verdict is inside the report. Needs a writable folder.
+#   "report_only" — never write beside the render; file the report in
+#                   pass/review/error instead. Use this when the watched folder
+#                   must stay untouched (see docs/server-safety.md).
 #   "copy"        — leave the original; put a verified copy in the verdict folder.
 #   "move"        — relocate the render. QC folders this app owns ONLY.
-mode = "report_only"
+mode = "alongside"
 
-# In report_only mode, drop a symlink in the verdict folder pointing at the
-# original, so staff can open the file from where they read the report.
-symlink_in_verdict_folder = true
+# For the verdict-folder modes only: drop a symlink beside the report pointing
+# at the original. Pointless in "alongside", where they already sit together.
+symlink_in_verdict_folder = false
 
 # Checksum a copy against its source before trusting it. Doubles the read cost
 # of a copy; worth turning on if you ever set mode = "move".
@@ -141,4 +143,11 @@ max_local_copy_gb    = 25.0        # larger than this, read in place
 [report]
 thumbnail_width = 480
 max_thumbnails  = 60
-write_json      = true
+
+# A machine-readable sidecar alongside the HTML. Off by default — it is clutter
+# next to a render unless something is actually consuming it.
+write_json = false
+
+# Put the verdict in the report filename ("Spot [FAIL].qc.html") so a folder
+# listing can be triaged without opening anything.
+verdict_in_filename = false

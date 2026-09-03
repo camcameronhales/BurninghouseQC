@@ -91,7 +91,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     cfg = _load(args)
-    cfg.paths.ensure()
+    cfg.ensure_paths()
     source = Path(args.file).expanduser().resolve()
     if not source.exists():
         print(f"No such file: {source}", file=sys.stderr)
@@ -120,7 +120,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
     from .watcher import QCService
 
     cfg = _load(args)
-    cfg.paths.ensure()
+    cfg.ensure_paths()
     QCService(cfg, keep_work=args.keep_work, verbose=args.verbose).run()
     return 0
 
@@ -203,7 +203,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         cfg.paths.status_file = root / "status.json"
         cfg.paths.log_file = root / "burninghouse-qc.log"
         cfg.paths.ledger_file = root / "processed.json"
-    cfg.paths.ensure()
+    cfg.ensure_paths()
 
     target = Path(args.output or "config.toml").expanduser().resolve()
     template = Path(__file__).resolve().parent.parent / "config.example.toml"
@@ -222,14 +222,18 @@ def cmd_init(args: argparse.Namespace) -> int:
         return 2
 
     print(f"\nQC folders ready under {cfg.paths.root}:")
-    for label, path in (
-        ("input ", cfg.paths.input),
-        ("pass  ", cfg.paths.passed),
-        ("review", cfg.paths.review),
-        ("error ", cfg.paths.error),
-    ):
+    listed = [("input ", cfg.paths.input)]
+    if cfg.uses_verdict_folders():
+        listed += [
+            ("pass  ", cfg.paths.passed),
+            ("review", cfg.paths.review),
+            ("error ", cfg.paths.error),
+        ]
+    for label, path in listed:
         print(f"  {label}  {path}")
     print(f"\nDrop renders into {cfg.paths.input}")
+    if not cfg.uses_verdict_folders():
+        print("Each report is written next to its render, named <file>.qc.html")
     print(f"Next:  bhqc -c {target} doctor")
     return 0
 
@@ -307,9 +311,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"  {'dictionary':<10} {speller.dictionary_path} "
           f"({len(speller.custom_words)} custom words{'' if exists else ', FILE MISSING'})")
 
-    mode = (cfg.routing.mode or "report_only").strip().lower()
+    mode = (cfg.routing.mode or "alongside").strip().lower()
     consequence = {
-        "report_only": "renders are never touched; only the report is written",
+        "alongside": "the report is written next to each render; nothing is moved",
+        "report_only": "renders are untouched; reports are filed in pass/review/error",
         "copy": "the original stays put; a verified copy is filed",
         "move": "renders are RELOCATED out of the input folder",
     }.get(mode, "UNKNOWN MODE — this will fail at routing time")
@@ -318,13 +323,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print("    Only use 'move' on a QC folder this app owns, never on shared storage.")
     print("    Run 'bhqc check-access' to verify the account's permissions.")
 
+    folders = [("input", cfg.paths.input), ("work", cfg.paths.work)]
+    if cfg.uses_verdict_folders():
+        folders += [
+            ("pass", cfg.paths.passed),
+            ("review", cfg.paths.review),
+            ("error", cfg.paths.error),
+        ]
     print(f"\n  Folders under {cfg.paths.root}:")
-    for label, path in (
-        ("input", cfg.paths.input),
-        ("pass", cfg.paths.passed),
-        ("review", cfg.paths.review),
-        ("error", cfg.paths.error),
-    ):
+    for label, path in folders:
         print(f"    {label:<7} {path} {'ok' if path.exists() else '(will be created)'}")
 
     print("\n  All good." if not problems else f"\n  {problems} problem(s) found.")
@@ -410,9 +417,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_cmd = sub.add_parser("run", help="QC one file and route it")
     run_cmd.add_argument("file")
     run_cmd.add_argument("--no-move", action="store_true",
-                         help="Force report_only: write the report, touch nothing")
-    run_cmd.add_argument("--mode", choices=["report_only", "copy", "move"], default=None,
-                         help="Override routing.mode for this run")
+                         help="Never relocate the render, whatever the configured mode")
+    run_cmd.add_argument("--mode", choices=["alongside", "report_only", "copy", "move"],
+                         default=None, help="Override routing.mode for this run")
     run_cmd.set_defaults(func=cmd_run)
 
     watch = sub.add_parser("watch", help="Run the folder-watching service")

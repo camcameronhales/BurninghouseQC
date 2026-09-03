@@ -30,6 +30,10 @@ An automated QC pipeline that watches a folder for newly rendered video files, c
    - **Review** → `/review` — low-confidence or borderline flags (e.g. an uncertain OCR guess, a single short black frame that might be intentional) that need a human eye before deciding pass/fail
    - **Fail** → `/error` — high-confidence, clear-cut issues (e.g. confirmed misspelling against dictionary, sustained black frame, audio dropout)
    - Every file gets a report regardless of which folder it lands in, so staff can see *why* it was routed where it was
+   - *(Revised in Session 9 after seeing it in use: the three-folder structure
+     was overkill. Reports are read whatever the verdict, so the report is now
+     written next to the render and nothing is sorted. The pass/review/fail
+     distinction still drives the verdict shown in the report.)*
 
 ## 4. Proposed tech stack
 
@@ -484,3 +488,46 @@ friends are all still flagged.
 3. Tune, and measure runtime on real footage.
 4. Decide who owns the custom dictionary.
 5. Phase 2 (Synology) once phase 1 is trusted.
+
+### Session 9 — 2026-09-03
+
+First real renders through the system on the Mac. Two files, both FAIL, and on
+review the findings were **false positives** — noted for tuning, details still
+to come. Worth recording the reaction: "better than missing everything", which
+is the right instinct and matches how the thresholds are set.
+
+**Output structure reworked on feedback.** The three verdict folders were
+overkill: reports get read whatever the verdict, so filing them by outcome just
+scatters them away from the thing they describe.
+
+New default `routing.mode = "alongside"`:
+- the report is written next to the render as `<name>.qc.html`
+- no pass/review/error folders — they are no longer even created
+- no `.qc.json` sidecar (`report.write_json` now defaults off)
+- no symlink/alias (`symlink_in_verdict_folder` now defaults off)
+- the render is still never moved, renamed or altered
+
+`report_only`, `copy` and `move` remain for the cases that want them.
+`report.verdict_in_filename` is a new option giving `Spot [FAIL].qc.html` for
+triage without opening anything; off by default.
+
+**This changes the phase 2 story and needs a decision.** `alongside` writes a
+small HTML file into the watched folder — on the Synology that is a write to
+the server. It is still true in every mode that renders are never moved,
+renamed or altered, but "the app writes nothing to the share" now only holds
+under `report_only`. A filesystem-enforced read-only share
+(`readonly-account.md`) requires `report_only`. `bhqc check-access` now fails
+loudly when the mode and the permissions disagree, in both directions.
+
+Verified end to end: two files through the watcher leave the input folder
+holding exactly the two renders and their two reports, nothing else, and
+`qc_root` holds no verdict folders at all.
+
+**Tested:** 237 tests passing (up from 229).
+
+**What's left:**
+1. Get the false-positive details and tune (custom dictionary first — most
+   false positives on real work are proper nouns).
+2. Measure runtime on a real master.
+3. Continue the phase 1 pilot alongside manual QC.
+4. Decide `alongside` vs `report_only` for the Synology before phase 2.

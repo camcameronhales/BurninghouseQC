@@ -8,26 +8,26 @@ Built to run as a launchd background service on a single macOS edit machine —
 no UI, no server, nobody watching it.
 
 ```
-renders/  (untouched)              pass/    Client_Spot_v4.qc.html
-  Client_Spot_v4.mp4  ────────▶             Client_Spot_v4.mp4 -> (shortcut)
-  Client_Spot_v3.mp4  ────────▶    error/   Client_Spot_v3.qc.html
-                                            Client_Spot_v3.mp4 -> (shortcut)
+renders/
+  Client_Spot_v3.mp4
+  Client_Spot_v3.qc.html   ← FAIL: misspelling at 00:01:12, black at 00:04:03
+  Client_Spot_v4.mp4
+  Client_Spot_v4.qc.html   ← PASS
 ```
 
-Every file gets a report, whichever folder it lands in, so staff can always see
-*why* it was routed there.
+Every file gets a report and the report sits next to the file it describes.
+Nothing is moved, renamed or sorted into folders — the verdict is inside the
+report, which gets read either way.
 
 > **Setting this up? Start with
 > [`docs/local-trial.md`](docs/local-trial.md)** — the step-by-step for
 > running it on one machine against local files.
 >
-> **The default never touches your renders.** The app doesn't write to, move,
-> rename or delete anything in the watched folder — it reads the render and
-> files a *report*, leaving the file where it is. Moving files is opt-in, for a
-> QC folder the app owns. When you later point it at shared storage,
-> [`docs/server-safety.md`](docs/server-safety.md) covers exactly what touches
-> what and [`docs/readonly-account.md`](docs/readonly-account.md) makes it a
-> filesystem guarantee rather than a promise.
+> **Your renders are never moved, renamed or altered.** The app reads each one
+> and writes a report beside it. The only thing it ever adds to the folder is
+> that `.qc.html` file. If even that is unwanted — pointing it at storage you
+> do not own, say — `routing.mode = "report_only"` files reports elsewhere and
+> touches nothing; see [`docs/server-safety.md`](docs/server-safety.md).
 
 ---
 
@@ -148,11 +148,12 @@ Anything FFmpeg can decode works; add its extension to `watcher.video_extensions
 
 Set by `routing.mode`:
 
-| Mode | The render | Use it for |
-| --- | --- | --- |
-| **`report_only`** (default) | never touched; a report and a shortcut go to the verdict folder | shared storage — anything you don't own |
-| `copy` | original stays; a verified copy is filed | a self-contained failed-QC pile |
-| `move` | relocated into the verdict folder | a QC folder this app owns outright |
+| Mode | Where the report goes | The render | Use it for |
+| --- | --- | --- | --- |
+| **`alongside`** (default) | next to the render | untouched | the normal case |
+| `report_only` | a `pass`/`review`/`error` folder | untouched, nothing written beside it | a folder that must stay untouched |
+| `copy` | verdict folder | original stays, verified copy filed | a self-contained failed-QC pile |
+| `move` | verdict folder | relocated | a QC folder this app owns outright |
 
 Even `move` is defensive: same-filesystem moves are a single atomic rename, and
 cross-filesystem moves copy to a `.qc-partial` name, verify the size (and
@@ -178,13 +179,16 @@ and the report says so.
 
 ## Reports
 
-Each file gets `<name>.qc.html` next to it — a single self-contained page with
+Each file gets `<name>.qc.html` beside it — a single self-contained page with
 the verdict, file metadata, and every finding with a timecode. Spelling flags
 include the frame with the offending word boxed in red, embedded in the HTML
 so the report survives being emailed or archived. It prints straight to PDF
 from the browser if a PDF is wanted.
 
-A `<name>.qc.json` sidecar carries the same data for scripting.
+Set `report.write_json = true` for a `.qc.json` sidecar carrying the same data,
+if something needs to consume it. Off by default. Set
+`report.verdict_in_filename = true` to get `Spot [FAIL].qc.html` instead, so a
+folder listing can be triaged without opening anything.
 
 ---
 

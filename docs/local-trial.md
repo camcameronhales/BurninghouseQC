@@ -18,24 +18,32 @@ for Homebrew.
 ├── dictionary/
 │   └── custom_words.txt    brand and client names — yours to edit
 └── qc_root/
-    ├── input/              ← drop renders here
-    ├── pass/               reports for clean files
-    ├── review/             reports for borderline files
-    ├── error/              reports for clear-cut problems
+    ├── input/              ← drop renders here; reports appear beside them
     ├── work/               scratch, cleared automatically
     ├── burninghouse-qc.log what it has done
     ├── status.json         what it's doing right now
     └── processed.json      what it has already checked
 ```
 
-Renders stay in `input/`. The verdict folders get the **report** plus a
-shortcut to the file. That's `report_only` mode — deliberately the same mode
-you'll deploy to the Synology with, so phase 1 actually tests the thing you're
-going to ship.
+After a run, `input/` looks like this — each render with its report beside it:
 
-> Prefer the files physically sorted during the trial? Set
-> `routing.mode = "move"` in `config.toml`. It's perfectly safe on a folder the
-> app owns. Just know you'll then be trialling a different mode than you deploy.
+```
+Client_Spot_v3.mp4
+Client_Spot_v3.qc.html
+Client_Spot_v4.mp4
+Client_Spot_v4.qc.html
+```
+
+Nothing is moved, renamed or sorted. The verdict is inside the report, which
+gets read either way.
+
+> Want the verdict visible without opening anything? Set
+> `report.verdict_in_filename = true` and reports are named
+> `Client_Spot_v3 [FAIL].qc.html`.
+>
+> Want reports kept out of the render folder entirely? Set
+> `routing.mode = "report_only"` and they are filed in `pass/`, `review/` and
+> `error/` instead, leaving the watched folder untouched.
 
 ---
 

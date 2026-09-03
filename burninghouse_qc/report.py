@@ -218,6 +218,8 @@ def write_report(
     """
     destination_dir.mkdir(parents=True, exist_ok=True)
     stem = stem or result.source.stem
+    if cfg.verdict_in_filename:
+        stem = f"{stem} [{result.verdict.value.upper()}]"
     html_path = destination_dir / f"{stem}.qc.html"
     html_path.write_text(render_html(result, cfg), encoding="utf-8")
     if cfg.write_json:
