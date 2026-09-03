@@ -20,6 +20,13 @@ _STRIP_CHARS = "\"'“”‘’`.,:;!?()[]{}<>*_—–-…"
 _POSSESSIVE = re.compile(r"[’']s$", re.IGNORECASE)
 _ALPHA_ONLY = re.compile(r"^[A-Za-z]+$")
 _ROMAN_NUMERAL = re.compile(r"^[IVXLCDM]+$")
+# The three case shapes real words come in: lowercase, Title Case, ALL CAPS.
+# Anything else — "gOLOUR", "PROFESSlONAL", "AchieVing" — is the signature of a
+# misread character, not of a misspelling, because a person typing a word wrong
+# does not change its case halfway through. Mixed-case brand names (ProRes,
+# iPhone) belong in the custom dictionary; skipping them costs nothing, since
+# they are spelled correctly anyway.
+_NORMAL_CASE = re.compile(r"^(?:[a-z]+|[A-Z][a-z]+|[A-Z]+)$")
 
 
 def normalise(token: str) -> str:
@@ -70,6 +77,8 @@ class Speller:
         if self.cfg.ignore_all_caps_acronyms and word.isupper() and len(word) <= 5:
             return False
         if _ROMAN_NUMERAL.match(word):
+            return False
+        if self.cfg.require_normal_case and not _NORMAL_CASE.match(word):
             return False
         return True
 

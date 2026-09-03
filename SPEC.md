@@ -433,3 +433,54 @@ produced a nice own-goal: pytest names its temp directory after the test, so
 and matched the test's own search string. Now filtered.
 
 **Tested:** 202 tests passing (up from 190).
+
+### Session 8 — 2026-08-27
+
+Phase 1 install completed on the Mac through step 5, and the known-answer test
+did its job — it caught a false positive that would otherwise have been found
+on real work.
+
+**Install issues found on the real machine** (all fixed, none in the QC logic):
+1. `python3` on macOS is Apple's 3.9, so the venv was unusable — 3.9 lacks
+   `tomllib` and its pip cannot do editable installs. The package now raises a
+   clear version error instead of failing on something unrelated, and the
+   runbook installs `python@3.13` explicitly.
+2. `-vsync 0` is deprecated since FFmpeg 5.1 and the Mac runs 9.0.1. Replaced
+   with a version-aware `-fps_mode passthrough` shim.
+3. The sample generator only looked for Arial in `/Library/Fonts`, which modern
+   macOS does not use.
+4. **Homebrew's FFmpeg ships without `drawtext`** (it needs libfreetype and,
+   since FFmpeg 7, libharfbuzz). Title cards are now rendered with Pillow — a
+   dependency already — and composited with `overlay`, removing the dependency
+   entirely. `doctor` now also checks that the five filters the pipeline
+   actually needs are present, so a missing filter surfaces during setup.
+
+**The real find: a false positive on the clean clip.** Tesseract 5.5.3 read
+"COLOUR" as **"gOLOUR"** at 74% confidence and it was flagged for review — on
+the clip that is supposed to come back with nothing. Different Tesseract
+version and different font to the Linux box, so it had never appeared here.
+
+The fix is a **case-shape filter** (`spelling.require_normal_case`, on by
+default): only tokens capitalised like real words are checked — lowercase,
+Title Case, or ALL CAPS. `gOLOUR` is none of those. The reasoning is that a
+person typing a word wrong does not change its case halfway through, so an odd
+case shape is the signature of a misread character rather than a misspelling.
+It also catches `PROFESSlONAL` (capital I read as lowercase l), a very common
+OCR failure.
+
+Deliberate trade-off: mixed-case brand names (ProRes, iPhone) are no longer
+checked either. That costs nothing — they are spelled correctly — and they
+belong in the custom dictionary regardless.
+
+Verified: the faulty clip still yields exactly the three planted findings and
+the clean clip yields none, while `Acheiving`, `recieve`, `SEPERATE` and
+friends are all still flagged.
+
+**Tested:** 223 tests passing (up from 202).
+
+**What's left:**
+1. Re-run step 5 on the Mac to confirm the clean clip comes back clean there.
+2. Step 6 — first run against real renders.
+3. Tune, and measure runtime on real footage.
+4. Decide who owns the custom dictionary.
+5. Phase 2 (Synology) once phase 1 is trusted.

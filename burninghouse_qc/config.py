@@ -141,6 +141,11 @@ class SpellingConfig:
     # accepted when its British/Australian form maps to a known US word
     # (colour -> color, organise -> organize). See variants.py.
     accept_british_spellings: bool = True
+    # Only check tokens whose capitalisation looks like a real word: lowercase,
+    # Title Case or ALL CAPS. A token like "gOLOUR" is a misread character, not
+    # a misspelling — people do not change case halfway through a word. This is
+    # a significant false-positive control on stylised graphics.
+    require_normal_case: bool = True
 
 
 @dataclass

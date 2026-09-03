@@ -81,3 +81,45 @@ def test_is_checkable_filters_ocr_noise(speller, token, checkable):
 
 def test_suggestions_offer_the_intended_word(speller):
     assert "achieving" in speller.suggestions("Acheiving")
+
+
+# -- OCR misread signatures ----------------------------------------------
+
+@pytest.mark.parametrize(
+    "token,why",
+    [
+        ("gOLOUR", "a misread C at the head of COLOUR"),
+        ("PROFESSlONAL", "a capital I misread as lowercase l"),
+        ("AchieVing", "a stray capital mid-word"),
+        ("cOMPANY", "misread C"),
+        ("GRADlNG", "misread I"),
+    ],
+)
+def test_ocr_misread_case_shapes_are_never_flagged(speller, token, why):
+    """People do not change case halfway through a word, so an odd case shape
+    means a misread character, not a misspelling. This was a real false positive
+    on the first macOS run: "gOLOUR" flagged on a clip with no errors in it."""
+    assert speller.is_checkable(token, min_length=4) is False, why
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["Acheiving", "recieve", "SEPERATE", "definately", "Occurence", "MISPELED"],
+)
+def test_real_typos_survive_the_case_filter(speller, token):
+    """The filter must not become an excuse to miss actual errors."""
+    assert speller.is_checkable(token, min_length=4)
+    assert speller.is_misspelled(token)
+
+
+@pytest.mark.parametrize("token", ["colour", "Colour", "COLOUR", "grading", "Grading"])
+def test_normal_case_shapes_are_still_checked(speller, token):
+    assert speller.is_checkable(token, min_length=4)
+
+
+def test_the_case_filter_can_be_turned_off(tmp_path):
+    from burninghouse_qc.config import SpellingConfig
+    from burninghouse_qc.spelling import Speller
+
+    relaxed = Speller(SpellingConfig(require_normal_case=False))
+    assert relaxed.is_checkable("gOLOUR", min_length=4)

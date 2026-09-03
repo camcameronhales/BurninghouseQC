@@ -105,6 +105,12 @@ ignore_all_caps_acronyms = true
 # colour/organise/centre are accepted automatically; see burninghouse_qc/variants.py
 accept_british_spellings = true
 
+# Only check tokens capitalised like real words: lowercase, Title Case, ALL CAPS.
+# "gOLOUR" is a misread C, not a misspelling — people don't change case halfway
+# through a word. A significant false-positive control on stylised graphics.
+# Mixed-case brand names (ProRes, iPhone) go in the custom dictionary.
+require_normal_case = true
+
 
 [routing]
 # What the app is allowed to do to the source render. READ docs/server-safety.md

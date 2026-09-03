@@ -42,6 +42,7 @@ Then classify what you find:
 | --- | --- |
 | Real error, but only routed to *review* | lower `text.fail_confidence`, or set `fail_min_occurrences = 1` |
 | Clean file flagged as *fail* | raise `text.min_confidence` first, then `fail_confidence` |
+| A flag on a garbled word (`gOLOUR`, `PROFESSlONAL`) | should already be filtered by `spelling.require_normal_case`; if not, raise `text.min_confidence` |
 | Same brand/client word flagged repeatedly | add it to `dictionary/custom_words.txt` — don't touch thresholds |
 | A misspelling was missed entirely | lower `text.sample_interval` (denser sampling) |
 | Intentional cut-to-black failed the file | raise `black.fail_duration` |
@@ -58,6 +59,14 @@ once tells you nothing about which one mattered.
 
 ### `[text]` — the ones you'll touch most
 
+- **`spelling.require_normal_case` (on)** — the single most effective
+  false-positive control. Only tokens capitalised like real words (lowercase,
+  Title Case, ALL CAPS) are checked. A token like `gOLOUR` is a misread `C`,
+  not a misspelling: people do not change case halfway through a word. This
+  caught a false positive on the very first macOS run. Mixed-case brand names
+  (ProRes, iPhone) are skipped by it too — put them in the custom dictionary,
+  which costs nothing since they are spelled correctly anyway. Turn it off only
+  if you find it hiding real errors.
 - **`min_confidence` (70)** — the noise gate. Tesseract scores every word it
   reads; below this the token is thrown away before spell-checking. Raise it if
   you're getting flags on garbled nonsense (a symptom of OCR reading texture,
