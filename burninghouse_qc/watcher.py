@@ -24,7 +24,7 @@ from .mounts import device_for, should_poll
 from .pipeline import cleanup_workdir, run_qc
 from .power import keep_awake
 from .router import route
-from .stability import is_candidate, wait_until_stable
+from .stability import Stability, is_candidate, wait_until_stable
 from .status import StatusFile, setup_logging
 
 
@@ -142,8 +142,23 @@ class QCService:
             return
         try:
             self.status.update(state="waiting_for_write", current_file=path.name)
-            if not wait_until_stable(path, self.cfg.watcher):
-                self.logger.warning("%s never settled (or disappeared) — skipping", path.name)
+            settled = wait_until_stable(path, self.cfg.watcher)
+            if settled is Stability.VANISHED:
+                self.logger.warning(
+                    "%s is no longer in the input folder — nothing to check. "
+                    "(Moved or deleted while it was queued?)",
+                    path.name,
+                )
+                self.status.update(state="idle", current_file=None)
+                return
+            if settled is Stability.TIMED_OUT:
+                hours = self.cfg.watcher.stability_timeout / 3600
+                self.logger.warning(
+                    "%s was still being written after %.1fh — skipping. It will be "
+                    "picked up next time the service starts.",
+                    path.name,
+                    hours,
+                )
                 self.status.update(state="idle", current_file=None)
                 return
 

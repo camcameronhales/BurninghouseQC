@@ -3,7 +3,7 @@
 import pytest
 
 from burninghouse_qc.config import WatcherConfig
-from burninghouse_qc.stability import is_candidate, wait_until_stable
+from burninghouse_qc.stability import Stability, is_candidate, wait_until_stable
 
 
 @pytest.mark.parametrize(
@@ -61,7 +61,8 @@ def test_growing_file_is_not_picked_up_until_it_stops(tmp_path):
             with path.open("ab") as fh:
                 fh.write(b"0" * 100)
 
-    assert wait_until_stable(path, cfg, sleep=sleep_and_maybe_grow, now=clock.now) is True
+    result = wait_until_stable(path, cfg, sleep=sleep_and_maybe_grow, now=clock.now)
+    assert result is Stability.STABLE
     assert writes["count"] == 4, "should have kept waiting while the file grew"
 
 
@@ -70,7 +71,7 @@ def test_stable_file_is_accepted(tmp_path):
     path = tmp_path / "render.mov"
     path.write_bytes(b"0" * 100)
     clock = FakeClock()
-    assert wait_until_stable(path, cfg, sleep=clock.sleep, now=clock.now) is True
+    assert wait_until_stable(path, cfg, sleep=clock.sleep, now=clock.now) is Stability.STABLE
 
 
 def test_zero_byte_file_is_never_considered_stable(tmp_path):
@@ -79,7 +80,7 @@ def test_zero_byte_file_is_never_considered_stable(tmp_path):
     path = tmp_path / "render.mov"
     path.touch()
     clock = FakeClock()
-    assert wait_until_stable(path, cfg, sleep=clock.sleep, now=clock.now) is False
+    assert wait_until_stable(path, cfg, sleep=clock.sleep, now=clock.now) is Stability.TIMED_OUT
 
 
 def test_vanished_file_returns_false(tmp_path):
@@ -92,7 +93,8 @@ def test_vanished_file_returns_false(tmp_path):
         clock.sleep(seconds)
         path.unlink(missing_ok=True)
 
-    assert wait_until_stable(path, cfg, sleep=sleep_then_delete, now=clock.now) is False
+    result = wait_until_stable(path, cfg, sleep=sleep_then_delete, now=clock.now)
+    assert result is Stability.VANISHED, "a deleted file is not the same as a slow one"
 
 
 def test_never_settling_file_times_out(tmp_path):
@@ -106,4 +108,16 @@ def test_never_settling_file_times_out(tmp_path):
         with path.open("ab") as fh:
             fh.write(b"0")
 
-    assert wait_until_stable(path, cfg, sleep=sleep_and_grow, now=clock.now) is False
+    assert wait_until_stable(path, cfg, sleep=sleep_and_grow, now=clock.now) is Stability.TIMED_OUT
+
+
+def test_a_file_that_was_never_there_is_reported_as_vanished(tmp_path):
+    """Real case: a queued file was gone by the time its turn came, and the log
+    said "never settled", implying a 6-hour timeout that had not happened."""
+    cfg = WatcherConfig(poll_interval=1.0, stability_checks=2, stability_timeout=21600)
+    clock = FakeClock()
+    result = wait_until_stable(
+        tmp_path / "gone.mov", cfg, sleep=clock.sleep, now=clock.now
+    )
+    assert result is Stability.VANISHED
+    assert clock.t == 0.0, "it must not sit waiting for a file that is not there"

@@ -138,3 +138,25 @@ def test_forget_without_a_file_is_an_error(tmp_path):
     config = tmp_path / "config.toml"
     main(["init", "-o", str(config)])
     assert main(["-c", str(config), "forget"]) == 2
+
+
+def test_init_can_name_the_watch_folder(tmp_path):
+    """The folder people drop files into is the one worth naming well."""
+    config = tmp_path / "config.toml"
+    watch = tmp_path / "BurninghouseQC Check"
+
+    assert main(["init", "-o", str(config), "--input", str(watch)]) == 0
+
+    cfg = Config.load(config)
+    assert cfg.paths.input == watch
+    assert watch.is_dir()
+
+
+def test_a_watch_folder_with_spaces_round_trips_through_the_config(tmp_path):
+    config = tmp_path / "config.toml"
+    watch = tmp_path / "BurninghouseQC Check"
+    main(["init", "-o", str(config), "--input", str(watch)])
+
+    reloaded = Config.load(config)
+    assert reloaded.paths.input == watch
+    assert " " in str(reloaded.paths.input)

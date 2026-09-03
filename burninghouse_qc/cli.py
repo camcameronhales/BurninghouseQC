@@ -204,6 +204,12 @@ def cmd_init(args: argparse.Namespace) -> int:
         cfg.paths.status_file = root / "status.json"
         cfg.paths.log_file = root / "burninghouse-qc.log"
         cfg.paths.ledger_file = root / "processed.json"
+
+    if getattr(args, "input", None):
+        # The folder people actually drop files into is the one worth naming
+        # well; everything else is plumbing they never look at.
+        cfg.paths.input = Path(args.input).expanduser().resolve()
+
     cfg.ensure_paths()
 
     target = Path(args.output or "config.toml").expanduser().resolve()
@@ -484,6 +490,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     init = sub.add_parser("init", help="Create folders and a starter config")
     init.add_argument("-o", "--output", default=None)
+    init.add_argument("--input", default=None,
+                      help='Folder to watch, e.g. "/Users/Shared/BurninghouseQC Check"')
     init.add_argument("--force", action="store_true")
     init.set_defaults(func=cmd_init)
 

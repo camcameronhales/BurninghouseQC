@@ -113,6 +113,15 @@ problems later.
 .venv/bin/bhqc init
 ```
 
+To name the watch folder something more obvious than `input`:
+
+```bash
+.venv/bin/bhqc init --input "/Users/Shared/BurninghouseQC Check"
+```
+
+Spaces are fine. Everything else — the scratch folder, logs, the ledger — stays
+under `qc_root/` where nobody has to look at it.
+
 That writes `config.toml` with absolute paths, creates the folder tree, and
 gives you your own `dictionary/custom_words.txt` — outside the repo, so
 `git pull` can never overwrite words you've added.
@@ -244,6 +253,41 @@ Only a path change needs the `kickstart`.
 
 `docs/service-setup.md` has the detail, including running it without a login
 and the privacy-permission traps.
+
+## Installing on a second machine
+
+Nothing is shared between machines: each has its own install, its own config
+and its own watch folder. Repeat steps 1–4, then point it at whatever folder
+suits that suite:
+
+```bash
+brew install ffmpeg tesseract python@3.13
+
+sudo mkdir -p /Users/Shared/BurninghouseQC
+sudo chown "$(whoami)" /Users/Shared/BurninghouseQC
+cd /Users/Shared/BurninghouseQC
+git clone https://github.com/camcameronhales/BurninghouseQC.git .
+git checkout claude/video-qc-app-spec-radpoh
+
+/opt/homebrew/bin/python3.13 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/pip install -e .
+
+.venv/bin/bhqc init --input "/Users/Shared/BurninghouseQC Check"
+.venv/bin/bhqc -c config.toml doctor
+.venv/bin/bhqc -c config.toml install-service
+```
+
+Two things worth copying across rather than rebuilding:
+
+- **`dictionary/custom_words.txt`** — the client and talent names you have
+  added. Copy the file over; it is plain text.
+- **`config.toml`** — only if you have tuned thresholds. Paths inside it are
+  absolute, so change those to match the second machine, or run `init` there
+  and re-apply just the thresholds you changed.
+
+Do **not** copy `qc_root/processed.json`; each machine keeps its own record of
+what it has checked.
 
 ## Step 9 — later still: point it at the Synology
 
