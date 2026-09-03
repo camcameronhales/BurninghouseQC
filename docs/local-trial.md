@@ -74,8 +74,24 @@ sudo chown "$(whoami)" /Users/Shared/BurninghouseQC
 cd /Users/Shared/BurninghouseQC
 
 git clone https://github.com/camcameronhales/BurninghouseQC.git .
-python3 -m venv .venv
+```
+
+**Use Homebrew's Python, not the one macOS ships.** macOS includes Python 3.9,
+which `python3` resolves to by default. This app needs 3.11+ (it uses
+`tomllib`), and 3.9's ancient bundled pip can't do editable installs either.
+
+```bash
+brew install python@3.13
+
+/opt/homebrew/bin/python3.13 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
 .venv/bin/pip install -e .
+```
+
+Confirm you got the right one — this must say 3.11 or higher:
+
+```bash
+.venv/bin/python --version
 ```
 
 `/Users/Shared` is deliberate: it isn't one of the folders macOS protects with
@@ -219,6 +235,11 @@ running is the one you've been trialling all along.
 Exit codes: `0` pass, `10` review, `20` fail — handy if you ever script it.
 
 ## If something goes wrong
+
+**"File setup.py or setup.cfg not found" / "editable mode requires setuptools"**
+— the venv was built with macOS's Python 3.9. Delete and rebuild it with
+Homebrew's: `rm -rf .venv && brew install python@3.13 && /opt/homebrew/bin/python3.13 -m venv .venv`,
+then upgrade pip and reinstall as in step 2.
 
 **"command not found: bhqc"** — use the full path,
 `/Users/Shared/BurninghouseQC/.venv/bin/bhqc`, or activate the venv first with
