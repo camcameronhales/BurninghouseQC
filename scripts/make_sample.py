@@ -26,11 +26,28 @@ import sys
 from pathlib import Path
 
 FONT_CANDIDATES = [
+    # macOS — Supplemental is where Arial and friends live on modern versions.
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/System/Library/Fonts/Supplemental/Verdana Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Tahoma Bold.ttf",
+    "/Library/Fonts/Arial.ttf",
+    # Linux
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-    "/Library/Fonts/Arial.ttf",
+    # Windows
     "C:/Windows/Fonts/arialbd.ttf",
+]
+
+# Searched if none of the above exist. drawtext needs a plain .ttf — a .ttc
+# collection needs an index it has no way to pick.
+FONT_DIRS = [
+    "/System/Library/Fonts/Supplemental",
+    "/Library/Fonts",
+    "/System/Library/Fonts",
+    "/usr/share/fonts",
+    "/usr/local/share/fonts",
 ]
 
 CARDS_FAULTY = [
@@ -64,7 +81,17 @@ def find_font() -> str:
     for candidate in FONT_CANDIDATES:
         if Path(candidate).exists():
             return candidate
-    raise SystemExit("No usable TTF font found; pass one via --font.")
+    # Nothing in the known list — take any .ttf we can find.
+    for directory in FONT_DIRS:
+        base = Path(directory)
+        if not base.is_dir():
+            continue
+        for found in sorted(base.rglob("*.ttf")):
+            return str(found)
+    raise SystemExit(
+        "No usable .ttf font found. Pass one explicitly, e.g.\n"
+        "  --font '/System/Library/Fonts/Supplemental/Arial.ttf'"
+    )
 
 
 def escape(text: str) -> str:
