@@ -83,6 +83,32 @@ def install(config_path: Path, cfg: Config) -> Path:
     return target
 
 
+def is_installed() -> bool:
+    return agent_path().exists()
+
+
+def kickstart() -> tuple[bool, str]:
+    """Restart the running service so it picks up new code.
+
+    A launchd agent holds the code it started with. Without this, `git pull`
+    updates the files on disk and changes nothing about what is actually
+    running — which is a silent, easily-missed failure.
+    """
+    if sys.platform != "darwin" or not is_installed():
+        return False, "no background service installed"
+    import subprocess
+
+    target = f"gui/{os.getuid()}/{LABEL}"
+    proc = subprocess.run(
+        ["launchctl", "kickstart", "-k", target],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return False, (proc.stderr or proc.stdout).strip() or "launchctl failed"
+    return True, "restarted"
+
+
 def commands() -> dict[str, str]:
     uid = os.getuid()
     return {

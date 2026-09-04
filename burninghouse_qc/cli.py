@@ -9,6 +9,7 @@
   bhqc check-access   Prove the QC account's permissions are what you think
   bhqc forget FILE    Clear a file from the ledger so it is checked again
   bhqc install-service  Run it automatically in the background (macOS)
+  bhqc update         Pull the latest code AND restart the service
 """
 
 from __future__ import annotations
@@ -458,6 +459,56 @@ def cmd_install_service(args: argparse.Namespace) -> int:
     print("  reboot and restarts itself if it ever crashes. Watch it with:\n")
     print(f"      bhqc -c {config_path} status")
     print(f"      tail -f {cfg.paths.log_file}\n")
+    print("  " + "-" * 68)
+    print("  IMPORTANT — updating from here on")
+    print("  " + "-" * 68)
+    print("  The service keeps the code it started with, so `git pull` alone")
+    print("  changes NOTHING about what is running. Always update with:\n")
+    print(f"      bhqc -c {config_path} update\n")
+    print("  which pulls and restarts in one step.\n")
+    return 0
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    """Update the code and restart the service, so the two cannot diverge.
+
+    `git pull` on its own leaves the running service on the old code, because a
+    launchd agent keeps whatever it started with. That is silent — everything
+    looks updated and nothing has changed — so the two steps belong together.
+    """
+    import subprocess
+
+    from . import service
+
+    repo = Path(__file__).resolve().parent.parent
+    if not (repo / ".git").exists():
+        print(f"{repo} is not a git checkout — update it however you installed it.",
+              file=sys.stderr)
+        return 2
+
+    print(f"\n  Updating {repo}")
+    pull = subprocess.run(
+        ["git", "-C", str(repo), "pull", "--ff-only"], capture_output=True, text=True
+    )
+    output = (pull.stdout + pull.stderr).strip()
+    for line in output.splitlines():
+        print(f"    {line}")
+    if pull.returncode != 0:
+        print("\n  Update failed — the service was left running the old code.\n",
+              file=sys.stderr)
+        return 1
+
+    restarted, detail = service.kickstart()
+    if restarted:
+        print("\n  Background service restarted on the new code.\n")
+    elif detail == "no background service installed":
+        print("\n  No background service installed, so nothing to restart.")
+        print("  If you are running `bhqc watch` by hand, stop it and start it again.\n")
+    else:
+        print(f"\n  WARNING: could not restart the service ({detail}).")
+        print("  It is still running the OLD code. Restart it with:")
+        print(f"      {service.commands()['restart']}\n")
+        return 1
     return 0
 
 
@@ -543,6 +594,11 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--print", dest="print_only", action="store_true",
                          help="Print the launchd agent instead of installing it")
     install.set_defaults(func=cmd_install_service)
+
+    update = sub.add_parser(
+        "update", help="Pull the latest code and restart the service (do this, not git pull)"
+    )
+    update.set_defaults(func=cmd_update)
 
     uninstall = sub.add_parser(
         "uninstall-service", help="Remove the background service"

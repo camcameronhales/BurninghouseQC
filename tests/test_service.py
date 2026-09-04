@@ -85,3 +85,41 @@ def test_the_commands_use_modern_launchctl(monkeypatch, tmp_path):
     assert "kickstart" in cmds["restart"]
     for command in cmds.values():
         assert "launchctl load" not in command, "load/unload are long deprecated"
+
+
+class TestUpdateProtocol:
+    """A launchd agent holds the code it started with, so `git pull` alone
+    changes nothing about what is running — silently. `bhqc update` exists so
+    the pull and the restart cannot be separated.
+    """
+
+    def test_kickstart_is_a_no_op_without_a_service(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+        ok, detail = service.kickstart()
+        assert ok is False
+        assert detail == "no background service installed"
+
+    def test_is_installed_tracks_the_agent_file(self, cfg, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+        assert service.is_installed() is False
+        service.install(tmp_path / "config.toml", cfg)
+        assert service.is_installed() is True
+
+
+def test_install_output_tells_you_how_to_update(cfg, tmp_path, monkeypatch, capsys):
+    """The instruction must be on screen at install time, not only in a doc."""
+    import sys as _sys
+
+    from burninghouse_qc.cli import main
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    monkeypatch.setattr(_sys, "platform", "darwin")
+
+    config = tmp_path / "config.toml"
+    main(["init", "-o", str(config)])
+    capsys.readouterr()
+
+    main(["-c", str(config), "install-service"])
+    printed = capsys.readouterr().out
+    assert "update" in printed
+    assert "git pull" in printed, "it must say why git pull is not enough"

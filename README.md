@@ -129,7 +129,14 @@ bhqc -c config.toml status
 
 # Prove the permissions are what you think they are
 bhqc -c config.toml check-access
+
+# Update the code AND restart the background service, in one step
+bhqc -c config.toml update
 ```
+
+> **`bhqc update`, not `git pull`.** Once the background service is installed it
+> holds the code it started with, so a plain `git pull` updates the files and
+> changes nothing about what is running — silently. `update` does both.
 
 `scan` and `run` exit `0` on pass, `10` on review and `20` on fail, so they drop
 straight into a render script or a scheduled task.

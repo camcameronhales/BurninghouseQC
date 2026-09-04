@@ -239,17 +239,30 @@ your config, your folders — and prints the command to start it. Then run the
 From then on it runs in the background, starts itself at login, and restarts if
 it ever crashes. No Terminal window needed.
 
+### Running protocol
+
 | | |
 | --- | --- |
+| **Update the app** | **`bhqc -c config.toml update`** — never plain `git pull` |
 | Is it running? | `launchctl print gui/$(id -u)/com.burninghouse.qc \| head -20` |
 | What's it doing? | `bhqc -c config.toml status` |
 | Watch it work | `tail -f qc_root/burninghouse-qc.log` |
-| Restart after a config change | `launchctl kickstart -k gui/$(id -u)/com.burninghouse.qc` |
+| Restart it | `launchctl kickstart -k gui/$(id -u)/com.burninghouse.qc` |
 | Stop it | `launchctl bootout gui/$(id -u)/com.burninghouse.qc` |
 | Remove it | `bhqc uninstall-service` |
 
-A threshold or dictionary change takes effect on the next file with no restart.
-Only a path change needs the `kickstart`.
+**The update rule, because it is the one that bites silently:** a launchd agent
+keeps the code it started with. `git pull` updates the files on disk and
+changes nothing about what is running — no error, no warning, everything looks
+updated. `bhqc update` pulls and restarts in one step, so the two cannot come
+apart. If you ever do run `git pull` by hand, follow it with:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.burninghouse.qc
+```
+
+A threshold or dictionary change needs no restart at all — those are re-read
+for every file. Only new *code* and changed *paths* need the restart.
 
 `docs/service-setup.md` has the detail, including running it without a login
 and the privacy-permission traps.

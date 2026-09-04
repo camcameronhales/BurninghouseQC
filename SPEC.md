@@ -646,3 +646,22 @@ happen.
 
 **Tested:** 284 tests passing (up from 277), including the four real fragments
 from this client work as regression cases.
+
+### Session 13 — 2026-09-04
+
+Added **`bhqc update`**: pulls the latest code and restarts the launchd service
+in one step.
+
+The failure mode it removes is silent and easy to hit. A launchd agent holds
+the code it started with, so after `git pull` the files on disk are new and the
+running service is not — with no error and nothing to notice. Rather than rely
+on remembering `launchctl kickstart` after every pull, the two steps are now
+one command, and it reports honestly when it cannot restart (leaving you on the
+old code) rather than claiming success.
+
+`install-service` now ends by printing the update rule on screen, so it is seen
+at the moment the service is installed rather than only living in a doc. The
+running protocol in `local-trial.md` leads with it.
+
+**Tested:** 287 tests passing (up from 284), including that the install output
+actually contains the instruction.
