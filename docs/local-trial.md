@@ -291,16 +291,34 @@ git checkout claude/video-qc-app-spec-radpoh
 .venv/bin/bhqc -c config.toml install-service
 ```
 
-Two things worth copying across rather than rebuilding:
+### Keeping the custom dictionary in step
 
-- **`dictionary/custom_words.txt`** — the client and talent names you have
-  added. Copy the file over; it is plain text.
-- **`config.toml`** — only if you have tuned thresholds. Paths inside it are
-  absolute, so change those to match the second machine, or run `init` there
-  and re-apply just the thresholds you changed.
+`dictionary/custom_words.txt` is the one file worth having the same on both
+machines. It holds the client, talent and brand names you have added, and a
+name added on one machine is unknown to the other — so you would get a flag
+there that you had already dismissed here.
 
-Do **not** copy `qc_root/processed.json`; each machine keeps its own record of
-what it has checked.
+**If you have not added any words yet, there is nothing to do.** A fresh
+install ships with 20 entries; `bhqc doctor` prints the count, and if it still
+says 20 on both machines they already match.
+
+Once you have added some, copy the file across by whatever is easiest:
+
+- **AirDrop** it, then move it into
+  `/Users/Shared/BurninghouseQC/dictionary/` on the other machine, replacing
+  the file that is there.
+- Or open both copies in TextEdit and paste the new lines in.
+
+It is a plain list, one word per line, so nothing can go badly wrong. Do it
+whenever you have added a batch — there is no need to keep them in lockstep.
+
+Two things **not** to copy:
+
+- **`qc_root/processed.json`** — each machine keeps its own record of what it
+  has checked.
+- **`config.toml`** — the paths inside are absolute and machine-specific. If
+  you have tuned thresholds, change the same lines by hand on the other
+  machine rather than copying the file.
 
 ## Shared storage — not the plan
 

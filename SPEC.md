@@ -665,3 +665,27 @@ running protocol in `local-trial.md` leads with it.
 
 **Tested:** 287 tests passing (up from 284), including that the install output
 actually contains the instruction.
+
+### Session 14 — 2026-09-11
+
+**Clean baseline reached.** All five MMR executive interview deliverables now
+come back **PASS**, with nothing but an info-level note about tail handles.
+
+    Session 10:  4 FAIL, 1 REVIEW, 0 PASS
+    Session 12:  0 FAIL, 2 REVIEW, 3 PASS
+    Session 14:  0 FAIL, 0 REVIEW, 5 PASS
+
+Runtime across the five, on real 1080p: 15.3–17.6s of QC per minute of video,
+averaging **16.3s per minute**. Consistent enough to plan around — a 10-minute
+master is about 2m 45s.
+
+Also simplified the second-machine dictionary instructions, which had reached
+for `scp` when AirDrop or copy-and-paste is the honest answer for one small
+text file. Noted that a fresh install ships 20 entries, so if `doctor` reports
+20 on both machines there is nothing to copy at all.
+
+**The outstanding gap:** three rounds of noise reduction have taken this from
+crying wolf on every file to silence on every file, but **no run so far has
+contained a real error**. The synthetic clip proves the detectors work; a real
+deliverable with a known mistake in it is the test that has not happened, and
+until it does the false-negative rate is unmeasured.
