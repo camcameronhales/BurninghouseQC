@@ -10,7 +10,7 @@ newest is the current state. `git branch -r` is the authority on that, not this
 line.
 **Status:** deployed and running on two machines. Detection for spelling, black
 frames and audio dropouts is working and evidenced. Detection for mis-timed
-graphics is new, and **not yet verified against the real case it was built for.**
+graphics is **confirmed against the real case it was built for** (§5).
 
 ---
 
@@ -25,7 +25,7 @@ renamed or altered.
 | On-screen spelling | frame sampling → Tesseract OCR → spell-check | confidently read (≥85%) in 2+ frames and not a word | several layers of false-positive control, see §4 |
 | Black frames | FFmpeg `blackdetect` | ≥0.5s mid-programme | head/tail fades are `info` only |
 | Audio dropout | FFmpeg `silencedetect` | ≥3s mid-programme, or a silent file | head/tail handles are `info` only |
-| Mis-timed graphic | text timeline over sampled frames | — always `review` | **unverified, see §5** |
+| Mis-timed graphic | text timeline over sampled frames | — always `review` | confirmed on the real case, see §5 |
 | Unreadable file | `ffprobe` | cannot open, or zero duration | |
 
 Verdicts are **pass / review / fail**, stated in the report. Every file gets a
@@ -67,10 +67,14 @@ in lower thirds, edge silence, and fragments of words caught mid-animation.
 machine. Cut-heavy material costs roughly 3× that — 41 scene changes means many
 more sampled frames and many more of them fetched by individual seek.
 
-**Not proven: that it catches anything.** This is the crux. Four clean batches
-demonstrate it does not cry wolf. They demonstrate nothing about false
-negatives. The one real error known to exist in the test material — see §5 — was
-missed by the original build and is still not confirmed caught.
+**One true positive, on the one error known to exist.** The mis-timed graphic in
+`WestUrban_AUG_2026.mp4` is caught (§5). That is the first evidence of a false
+*negative* being closed rather than a false positive avoided, and it is a single
+case: four clean batches plus one catch is not a false-negative rate.
+
+**Still not measured: what it misses.** Nothing here says how many mistakes of
+other kinds would pass. A graphic held under about three seconds cannot be
+timed at all on the current 1.5s grid — see §6.
 
 ## 4. False-positive controls (all in `[spelling]` / `[text]`)
 
@@ -121,20 +125,23 @@ Where it stands:
   had fired.
 - The most recent run, post-fix, **does not flag it**.
 
-So it remains unresolved. Plausible causes, untested:
+**Resolved on 2026-09-17: it is caught.** The QC now returns REVIEW with
+"A graphic appears briefly at 00:02:12.00, then again properly at 00:02:16.50".
+`scripts/diagnose_frames.py` over the kept frames settled the open question —
+OCR reads the card at **95–96% confidence** ("For More Information on fall
+prevention visit worksafe.vic.gov.au"), so the text-based approach was sound
+and pixel-difference is not needed.
 
-- OCR cannot read that particular graphic (style, contrast, size), so there is
-  no text to correlate. Check by OCRing `t00132.000.png` directly.
-- The text at 02:12 does not overlap enough with the proper appearance to match
-  (`flash_match = 0.6`).
-- The proper appearance is fewer than `flash_min_proper_frames = 2` sampled
-  frames.
-- The premise is wrong and a text-based approach cannot see this at all — the
-  graphic may be recognised by OCR in neither appearance.
+The diagnostic also found a defect that had been shortening the measurement:
+`frame_signature` required `.isalpha()`, so the URL was dropped and the three
+frames showing only the URL had an *empty* signature — which ends a run. A card
+on screen for over four seconds measured 0.70s. Domains now count toward a
+frame's signature, and a brief appearance is measured in seconds
+(`flash_max_span`) rather than counted in sampled frames.
 
-**The diagnostic that settles it:** run OCR over the kept frames from 129s–142s
-and print what text is found in each. `scripts/diagnose_frames.py` does exactly
-this — point it at the `--keep-work` folder:
+**The diagnostic, kept because the next silent detector will need it:** it runs
+OCR over the kept frames in a window and prints what was found in each.
+`scripts/diagnose_frames.py` — point it at the `--keep-work` folder:
 
 ```bash
 python scripts/diagnose_frames.py "$QC_ROOT/work/<job>" --from 129 --to 142
@@ -151,8 +158,11 @@ lower-third region rather than OCR.
 
 ## 6. Known issues
 
-- **Flashed-graphic detection unverified** (§5). The feature is on by default
-  and currently silent on the one case it exists for.
+- **A brief graphic cannot be timed on the sampling grid.** `flash_max_span`
+  is measured in seconds, but the baseline grid is 1.5s, so a single-sample
+  appearance is only bounded as "under about 3 seconds" — 0.3s and 1.4s are
+  indistinguishable. Flagging graphics under 2 seconds *as such* needs denser
+  sampling in the window around a candidate, which is not built.
 - **Custom dictionary does not sync** between the two machines. Hand-copied;
   currently unedited (20 shipped entries) on both.
 - **`ProcessType` fix may not be applied.** The launchd agent originally

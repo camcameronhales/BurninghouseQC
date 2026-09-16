@@ -136,7 +136,7 @@ def main() -> int:
     print(f"frames in window   {len(paths)} of {total} in the folder")
     print(f"thresholds         min_confidence={cfg.min_confidence:.0f} "
           f"min_word_length={cfg.min_word_length} run_match={cfg.run_match} "
-          f"flash_match={cfg.flash_match} flash_max_frames={cfg.flash_max_frames} "
+          f"flash_match={cfg.flash_match} flash_max_span={cfg.flash_max_span} "
           f"flash_min_proper_frames={cfg.flash_min_proper_frames}")
     print()
 
@@ -182,7 +182,7 @@ def main() -> int:
     print("=" * 72)
     merged = []
     for index, run in enumerate(runs):
-        brief = "BRIEF" if run.frames <= cfg.flash_max_frames else "     "
+        brief = "BRIEF" if run.span <= cfg.flash_max_span else "     "
         print(f"  [{index}] {brief} {format_timecode(run.start)} -> {format_timecode(run.end)}  "
               f"span={run.span:5.2f}s  frames={run.frames}")
         print(f"        words: {', '.join(sorted(run.words)) or '(none)'}")
@@ -207,7 +207,7 @@ def main() -> int:
               f"overlap={_overlap(brief.words, proper.words):.2f}")
     if not flashes:
         # Say *why* it stayed silent: the near-misses are the useful part.
-        briefs = [r for r in runs if r.frames <= cfg.flash_max_frames]
+        briefs = [r for r in runs if r.span <= cfg.flash_max_span]
         print(f"  no pair. {len(briefs)} run(s) were brief enough to qualify.")
         for brief in briefs:
             candidates = [

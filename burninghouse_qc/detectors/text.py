@@ -357,6 +357,30 @@ def collect_suspects(
 # Graphics appearing when they should not
 # --------------------------------------------------------------------------
 
+# A URL or domain is usually the most identifying thing on an end card, and it
+# is not alphabetic — so it was dropped from the signature, which left frames
+# showing only the URL with an *empty* signature. An empty signature ends a run,
+# so one graphic became two and its span collapsed to a fraction of the time it
+# was really on screen. Matched after `normalise`, which has already stripped
+# any leading and trailing punctuation.
+_DOMAIN_LIKE = re.compile(r"^[a-z0-9][a-z0-9._\-/:]*\.[a-z0-9][a-z0-9._\-/]*$", re.IGNORECASE)
+
+
+def is_signature_token(word: str) -> bool:
+    """Whether a normalised token helps identify what is on screen.
+
+    Looser than the spell-check gate, because this decides "is the same graphic
+    still up" rather than "is this a real word" — but not so loose that OCR
+    noise off a busy frame starts forming runs of its own, which is why a
+    non-alphabetic token has to look like a domain and carry real letters.
+    """
+    if word.isalpha():
+        return True
+    if not _DOMAIN_LIKE.match(word):
+        return False
+    return sum(character.isalpha() for character in word) >= 3
+
+
 def frame_signature(frame: SampledFrame, cfg: TextConfig) -> frozenset[str]:
     """The words on screen in this frame, as something comparable between frames.
 
@@ -368,7 +392,7 @@ def frame_signature(frame: SampledFrame, cfg: TextConfig) -> frozenset[str]:
         for word in frame.words
         if word.confidence >= cfg.min_confidence
         and len(normalise(word.text)) >= cfg.min_word_length
-        and normalise(word.text).isalpha()
+        and is_signature_token(normalise(word.text))
     }
     return frozenset(words)
 
@@ -410,10 +434,19 @@ def find_flashed_graphics(
     """
     flashes: list[tuple[TextRun, TextRun]] = []
     for index, brief in enumerate(runs):
-        if brief.frames > cfg.flash_max_frames:
+        # Measured seconds, not a frame count. How many frames a graphic lands
+        # on depends on where the sampling grid happens to fall; how long it was
+        # on screen is the thing that makes it a mistake.
+        if brief.span > cfg.flash_max_span:
             continue
         for other in runs[index + 1:]:
             if other.frames < cfg.flash_min_proper_frames:
+                continue
+            # The proper appearance has to be held *longer* than the brief one.
+            # Without this, a brand tag shown twice for the same length pairs
+            # with itself: both are under flash_max_span, so either could be
+            # read as the flash. "Briefly, then properly" means one is shorter.
+            if other.span <= brief.span:
                 continue
             if _overlap(brief.words, other.words) >= cfg.flash_match:
                 flashes.append((brief, other))
@@ -450,7 +483,9 @@ def flashed_graphic_findings(
                 detail={
                     "text": shown,
                     "proper_appearance": format_timecode(proper.start),
+                    "brief_span": round(brief.span, 2),
                     "brief_frames": brief.frames,
+                    "proper_span": round(proper.span, 2),
                     "proper_frames": proper.frames,
                 },
                 thumbnail=_first_frame_path(frames, brief.start),

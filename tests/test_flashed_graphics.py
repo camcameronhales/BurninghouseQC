@@ -20,7 +20,9 @@ from burninghouse_qc.detectors.text import (
     SampledFrame,
     build_text_runs,
     find_flashed_graphics,
+    flashed_graphic_findings,
     frame_signature,
+    is_signature_token,
 )
 
 
@@ -187,3 +189,78 @@ def test_the_whole_finding_survives_serialisation():
     assert data["kind"] == "flashed_graphic"
     assert data["severity"] == "review"
     assert data["detail"]["proper_appearance"] == "00:02:18.00"
+
+
+# -- what the real WestUrban case actually looked like -------------------
+
+class TestSignatureTokens:
+    """A URL is usually the most identifying thing on an end card.
+
+    On the real deliverable the card read "For More Information on fall
+    prevention visit worksafe.vic.gov.au". Three sampled frames showed only the
+    URL, and because it is not alphabetic it was dropped — leaving those frames
+    with an empty signature, which ends a run. The graphic was on screen for
+    over four seconds and the detector measured 0.70s.
+    """
+
+    def test_a_domain_identifies_a_graphic(self):
+        assert is_signature_token("worksafe.vic.gov.au")
+        assert is_signature_token("vic.gov.au")
+
+    def test_plain_words_still_count(self):
+        assert is_signature_token("prevention")
+
+    def test_ocr_noise_does_not(self):
+        for junk in ("w7A4", "a3", "12.34", "=2B3", "——"):
+            assert not is_signature_token(junk), junk
+
+    def test_a_url_only_frame_does_not_end_a_run(self):
+        frames = [
+            frame(136.5, "prevention", "visit"),
+            frame(138.0, "worksafe.vic.gov.au"),
+            frame(139.5, "worksafe.vic.gov.au"),
+        ]
+        runs = build_text_runs(frames, TextConfig())
+        # Still two runs — the text genuinely changes — but the URL frames form
+        # a run of their own rather than vanishing and truncating the first.
+        assert [run.frames for run in runs] == [1, 2]
+        assert runs[1].span == 1.5
+
+
+class TestBriefIsMeasuredInSeconds:
+    def test_a_graphic_held_longer_than_the_span_is_not_brief(self):
+        """Frame count depends on where the grid falls; seconds do not."""
+        frames = [frame(10.0 + n * 0.5, "PRODUCT", "LAUNCH") for n in range(6)]
+        frames += [frame(14.0), *[frame(20.0 + n * 1.5, "PRODUCT", "LAUNCH") for n in range(4)]]
+        cfg = TextConfig(flash_max_span=2.0)
+        # The first run is six frames but only 2.5s — the old frame-count rule
+        # would never have called it brief, and the span rule correctly does not
+        # either, because 2.5s is longer than flash_max_span.
+        assert find_flashed_graphics(build_text_runs(frames, cfg), cfg) == []
+
+    def test_a_repeat_of_equal_length_is_not_a_flash(self):
+        """The regression that adding the span rule introduced.
+
+        Two appearances of the same length are a repeat, not a flash: with both
+        under flash_max_span, either could be read as the brief one.
+        """
+        frames = [
+            frame(10.0, "BURNINGHOUSE"), frame(11.5, "BURNINGHOUSE"),
+            frame(13.0),
+            frame(40.0, "BURNINGHOUSE"), frame(41.5, "BURNINGHOUSE"),
+        ]
+        cfg = TextConfig()
+        assert find_flashed_graphics(build_text_runs(frames, cfg), cfg) == []
+
+    def test_the_finding_records_both_spans(self):
+        frames = [
+            frame(132.0, "PRODUCT", "LAUNCH", "2026"),
+            frame(133.5),
+            *[frame(138.0 + n * 1.5, "PRODUCT", "LAUNCH", "2026") for n in range(3)],
+        ]
+        cfg = TextConfig()
+        runs = build_text_runs(frames, cfg)
+        findings = flashed_graphic_findings(frames, runs, cfg)
+        assert len(findings) == 1
+        assert findings[0].detail["brief_span"] == 0.0
+        assert findings[0].detail["proper_span"] == 3.0

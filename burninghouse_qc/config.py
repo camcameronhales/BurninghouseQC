@@ -132,8 +132,10 @@ class TextConfig:
     detect_flashed_graphics: bool = True
     # Word overlap needed to call two consecutive frames the same graphic.
     run_match: float = 0.5
-    # A brief appearance is this many sampled frames or fewer...
-    flash_max_frames: int = 1
+    # A brief appearance is on screen this many seconds or fewer. Measured, not
+    # counted in frames: how many samples a graphic lands on depends on where
+    # the grid falls, and cannot resolve below `sample_interval`.
+    flash_max_span: float = 2.0
     # ...and the proper appearance must span at least this many.
     flash_min_proper_frames: int = 2
     # Word overlap needed to call the brief and proper appearances the same graphic.
@@ -305,6 +307,7 @@ class Config:
 # anyone reads. An unrecognised key is still an error — only these are excused.
 OBSOLETE_KEYS = {
     "routing.verify_hash": "the copy and move routing modes were removed",
+    "text.flash_max_frames": "replaced by text.flash_max_span, which is measured in seconds",
 }
 
 

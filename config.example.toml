@@ -91,7 +91,7 @@ max_frames              = 600      # ceiling per job, keeps long masters bounded
 # Either appearance alone is unremarkable; it is the pairing that is a defect.
 detect_flashed_graphics = true
 run_match               = 0.5      # word overlap to call two frames the same graphic
-flash_max_frames        = 1        # a brief appearance is this many frames or fewer
+flash_max_span          = 2.0      # a brief appearance is this many seconds or fewer
 flash_min_proper_frames = 2        # ...and the proper one at least this many
 flash_match             = 0.6      # word overlap to call them the same graphic
 
