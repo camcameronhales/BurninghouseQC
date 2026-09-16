@@ -124,9 +124,21 @@ So it remains unresolved. Plausible causes, untested:
   graphic may be recognised by OCR in neither appearance.
 
 **The diagnostic that settles it:** run OCR over the kept frames from 129s–142s
-and print what text is found in each. If the graphic's text does not appear,
-the detector cannot work and the approach needs rethinking — likely toward
-pixel-difference comparison of the lower-third region rather than OCR.
+and print what text is found in each. `scripts/diagnose_frames.py` does exactly
+this — point it at the `--keep-work` folder:
+
+```bash
+python scripts/diagnose_frames.py "$QC_ROOT/work/<job>" --from 129 --to 142
+```
+
+It separates the cases that look identical from outside: OCR reading nothing,
+OCR reading it but the filters dropping it, both halves read but not pairing,
+and the two appearances merging into one run because no blank frame was
+sampled between them.
+
+If the graphic's text does not appear at all, the detector cannot work and the
+approach needs rethinking — likely toward pixel-difference comparison of the
+lower-third region rather than OCR.
 
 ## 6. Known issues
 
