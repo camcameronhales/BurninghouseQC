@@ -186,6 +186,7 @@ burninghouse_qc/
   spelling.py       dictionary + OCR-aware filtering + proper nouns
   variants.py       British/Australian spelling tolerance
   scan.py           one decode pass shared by black + scene detection
+  ffmpeg_tools.py   ffmpeg/ffprobe wrappers, and the build's filter list
   detectors/
     black.py        blackdetect
     silence.py      silencedetect
@@ -193,7 +194,9 @@ burninghouse_qc/
   transfer.py       verified copy, used to stage a network file locally
   ledger.py         what has already been checked
   service.py        the launchd agent
+  status.py         the JSON status file and log behind `bhqc status`
   notify.py         desktop banners
+  access.py         permission verification — proves read-only is read-only
   mounts.py         network-share detection (dormant: local storage only)
   power.py          caffeinate while a job runs
 docs/

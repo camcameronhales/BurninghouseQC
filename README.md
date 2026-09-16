@@ -234,6 +234,9 @@ burninghouse_qc/
   access.py         permission verification — proves read-only is read-only
   transfer.py       verified copy/move; never deletes an unverified source
   ledger.py         what has already been checked, so nothing is re-QC'd
+  service.py        the launchd agent
+  status.py         the JSON status file and log behind `bhqc status`
+  notify.py         desktop banners
   mounts.py         network-share detection (FSEvents vs polling)
   power.py          caffeinate assertion held only while a job runs
   ffmpeg_tools.py   ffmpeg/ffprobe wrappers
