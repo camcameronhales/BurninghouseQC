@@ -777,3 +777,42 @@ different shape of job and the frame budget has never been exercised against
 it.
 
 **Tested:** 314 tests passing (up from 311).
+
+### Session 18 — 2026-09-16
+
+A brand film took **784 seconds to check 142 seconds of video** — about 330s of
+QC per minute against a measured baseline of 16s. Twenty times slower, on a
+clip barely longer than the interviews.
+
+Investigated rather than guessed, and two hypotheses were tested and rejected:
+
+- **Follow-up frame seeks.** The clip had 41 scene changes against 0-1 for the
+  interviews, and those follow-ups are extracted one ffmpeg seek at a time. A
+  cut-heavy long-GOP clip was built to reproduce it: 0.17s per seek, about 6s
+  in total. Not it.
+- **OCR on complex footage.** Tesseract's sparse-text mode hunts text
+  everywhere, so a visually busy frame ought to cost more. Measured across
+  plain, test-pattern and heavy-noise frames: 0.27s, 0.51s, 1.27s. Not it
+  either.
+
+That leaves a setting I chose myself. The launchd agent declares
+`ProcessType = Background`, which is not merely a low priority — it is a
+throttled class, with disk I/O held back as well as CPU, on the assumption the
+work is not time-sensitive. The timings fit: the interviews ran at 08:30 on a
+presumably idle machine, the brand film at 15:49 mid-afternoon on the main
+suite. The intent (stay off the editor's cores) was right; the setting was too
+blunt.
+
+`[service] process_type` and `nice` are now configurable and default to
+`Standard` with `nice = 5`, which yields to the editor without being throttled.
+
+**Not yet proven.** Machine contention and the throttling class are both
+consistent with the evidence and cannot be separated remotely. The test that
+distinguishes them is running the same file through `bhqc scan` in Terminal,
+where neither applies.
+
+**Worth noting on the QC itself:** 41 scene changes and 151 frames produced no
+text findings at all. The only flag was 2.18s of mid-programme silence, which
+is a fair thing to raise. No false positives on cut-heavy graded material.
+
+**Tested:** 315 tests passing.

@@ -604,6 +604,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     install.add_argument("--print", dest="print_only", action="store_true",
                          help="Print the launchd agent instead of installing it")
+    install.add_argument("--force", action="store_true",
+                         help="Overwrite an existing agent (after changing [service] settings)")
     install.set_defaults(func=cmd_install_service)
 
     update = sub.add_parser(

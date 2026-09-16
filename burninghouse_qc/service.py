@@ -29,6 +29,8 @@ def build_plist(config_path: Path, python: Path, cfg: Config) -> str:
     working_dir = config_path.parent
     out_log = cfg.paths.log_file.parent / "launchd.out.log"
     err_log = cfg.paths.log_file.parent / "launchd.err.log"
+    process_type = cfg.service.process_type or "Standard"
+    nice = int(cfg.service.nice)
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -61,11 +63,16 @@ def build_plist(config_path: Path, python: Path, cfg: Config) -> str:
   <key>KeepAlive</key>
   <true/>
 
-  <!-- QC is background work; keep it off the cores the editor is using. -->
+  <!--
+    Yield to whoever is using the machine, without being throttled.
+    "Background" sounds right but is a throttled class in launchd — disk I/O
+    held back as well as CPU — which can slow a job by an order of magnitude
+    on a busy machine. Configurable under [service] in config.toml.
+  -->
   <key>ProcessType</key>
-  <string>Background</string>
+  <string>{process_type}</string>
   <key>Nice</key>
-  <integer>5</integer>
+  <integer>{nice}</integer>
 
   <key>StandardOutPath</key>
   <string>{out_log}</string>

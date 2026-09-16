@@ -177,6 +177,23 @@ class SpellingConfig:
 
 
 @dataclass
+class ServiceConfig:
+    """How the background service competes with whoever is using the machine.
+
+    launchd's "Background" ProcessType is not just a low priority: it is a
+    throttled class, with disk I/O held back as well as CPU, on the assumption
+    the work is not time-sensitive. On a busy machine that can slow a job by an
+    order of magnitude. "Standard" with a positive `nice` still yields to the
+    editor without being throttled, which is the behaviour actually wanted.
+    """
+
+    # "Standard" | "Background" | "Adaptive" | "Interactive"
+    process_type: str = "Standard"
+    # 0 is normal, 20 is maximum politeness. 5 yields without crawling.
+    nice: int = 5
+
+
+@dataclass
 class NotificationConfig:
     """Desktop notifications while the service runs unattended.
 
@@ -250,6 +267,7 @@ class Config:
     text: TextConfig = field(default_factory=TextConfig)
     spelling: SpellingConfig = field(default_factory=SpellingConfig)
     routing: RoutingConfig = field(default_factory=RoutingConfig)
+    service: ServiceConfig = field(default_factory=ServiceConfig)
     notifications: NotificationConfig = field(default_factory=NotificationConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
     source_path: Path | None = None

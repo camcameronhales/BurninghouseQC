@@ -158,6 +158,21 @@ work_from_local_copy = true
 max_local_copy_gb    = 25.0        # larger than this, read in place
 
 
+[service]
+# How the background service competes with whoever is using the machine.
+#
+# launchd's "Background" ProcessType is not merely a low priority — it is a
+# throttled class, with disk I/O held back as well as CPU, on the assumption
+# the work is not time-sensitive. On a busy machine that can slow a QC job by
+# an order of magnitude. "Standard" with a positive nice yields to the editor
+# without being throttled.
+#
+# Changing these needs the service reinstalling:
+#   bhqc -c config.toml install-service --force
+process_type = "Standard"          # "Standard" | "Background" | "Adaptive"
+nice         = 5                   # 0 normal, 20 maximum politeness
+
+
 [notifications]
 # Desktop banners while the service runs unattended. macOS only.
 #

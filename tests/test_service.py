@@ -59,10 +59,25 @@ def test_it_supplies_a_path_for_ffmpeg_and_tesseract(plist):
     assert "/usr/local/bin" in path, "Intel Homebrew"
 
 
-def test_it_runs_at_low_priority(plist):
-    """It shares the machine with whoever is editing on it."""
-    assert plist["ProcessType"] == "Background"
+def test_it_yields_without_being_throttled(plist):
+    """It shares the machine with whoever is editing on it — but launchd's
+    "Background" class throttles disk I/O as well as CPU, which can slow a job
+    by an order of magnitude on a busy machine. A positive nice yields without
+    that penalty."""
     assert plist["Nice"] > 0
+    assert plist["ProcessType"] != "Background"
+
+
+def test_the_priority_is_configurable(cfg, tmp_path):
+    import plistlib
+
+    cfg.service.process_type = "Background"
+    cfg.service.nice = 12
+    plist = plistlib.loads(
+        service.build_plist(tmp_path / "config.toml", Path("/x/python"), cfg).encode()
+    )
+    assert plist["ProcessType"] == "Background"
+    assert plist["Nice"] == 12
 
 
 def test_logs_go_somewhere_findable(plist, cfg):
