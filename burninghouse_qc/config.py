@@ -7,6 +7,7 @@ defaults, which are deliberately conservative first guesses (see SPEC.md §6).
 
 from __future__ import annotations
 
+import sys
 import tomllib
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
@@ -297,15 +298,33 @@ class Config:
         return cfg
 
 
-def _apply(target: Any, data: dict, context: Path) -> None:
+# Options that a shipped config.example.toml once contained and the app no
+# longer has. A config.toml is hand-maintained on each machine and outlives the
+# code, so an option going away must not be fatal: the launchd agent restarts on
+# crash, which turns a hard error here into a crash loop instead of a message
+# anyone reads. An unrecognised key is still an error — only these are excused.
+OBSOLETE_KEYS = {
+    "routing.verify_hash": "the copy and move routing modes were removed",
+}
+
+
+def _apply(target: Any, data: dict, context: Path, prefix: str = "") -> None:
     """Overlay a parsed TOML mapping onto a nested dataclass instance."""
     by_name = {f.name: f for f in fields(target)}
     for key, value in data.items():
         if key not in by_name:
+            qualified = f"{prefix}{key}"
+            if qualified in OBSOLETE_KEYS:
+                print(
+                    f"  note: ignoring obsolete config key {qualified!r} — "
+                    f"{OBSOLETE_KEYS[qualified]}. It can be deleted.",
+                    file=sys.stderr,
+                )
+                continue
             raise ValueError(f"Unknown config key: {key}")
         current = getattr(target, key)
         if is_dataclass(current) and isinstance(value, dict):
-            _apply(current, value, context)
+            _apply(current, value, context, prefix=f"{prefix}{key}.")
         elif isinstance(current, Path):
             candidate = Path(value).expanduser()
             if not candidate.is_absolute():
