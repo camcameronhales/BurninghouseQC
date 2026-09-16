@@ -126,6 +126,18 @@ class TextConfig:
     # lets a 10-minute deliverable keep the full 1.5s cadence; longer clips
     # widen the interval rather than losing coverage at the end.
     max_frames: int = 600
+    # Watch for a graphic that appears briefly, vanishes, then appears properly
+    # later — a super flashed on at the wrong moment and fixed a few shots on.
+    detect_flashed_graphics: bool = True
+    # Word overlap needed to call two consecutive frames the same graphic.
+    run_match: float = 0.5
+    # A brief appearance is this many sampled frames or fewer...
+    flash_max_frames: int = 1
+    # ...and the proper appearance must span at least this many.
+    flash_min_proper_frames: int = 2
+    # Word overlap needed to call the brief and proper appearances the same graphic.
+    flash_match: float = 0.6
+
     tesseract_lang: str = "eng"
     # Tesseract page segmentation mode. 11 = sparse text, best for graphics.
     tesseract_psm: int = 11

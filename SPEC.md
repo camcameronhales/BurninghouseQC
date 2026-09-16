@@ -27,6 +27,9 @@ An automated QC pipeline that watches a folder for newly rendered video files, c
    - **Black frame detection**: FFmpeg `blackdetect`
    - **Silence/audio dropout detection**: FFmpeg `silencedetect`
    - *(Stretch, not v1)*: frozen frame detection, loudness spikes, resolution/aspect ratio mismatch, flash frames
+     *(Session 20: a flashed-graphic detector was brought forward after a real
+     client deliverable turned out to contain exactly this error and passed
+     clean.)*
 4. Generate a report (HTML or PDF) — timestamped issue list, with frame thumbnails for flagged spelling issues
 5. Route the file into one of three folders:
    - **Pass** → `/pass` — no issues found, or only high-confidence non-issues
@@ -838,3 +841,44 @@ has cores to spare — is deliberately **not** being pulled without asking,
 because it trades directly against the reason the service is niced in the first
 place: staying out of the way of whoever is editing. Fast and greedy is not
 obviously better than slow and invisible on a shared edit machine.
+
+### Session 20 — 2026-09-16
+
+**The first real error, and it was missed.** WestUrban contains a graphics
+mistake at 02:12–02:13 — a super pops on, goes off, then appears properly a
+couple of shots later. The QC passed it with one unrelated silence note.
+
+This was not a tuning failure. Nothing in the app looked for it: the text is
+spelled correctly, there is no black and no silence. The original spec listed
+"flash frames" as an explicit v1 stretch item, so it was known to be out of
+scope — but four clean batches had built a quiet confidence that this usefully
+punctures. Not crying wolf and actually catching things are different
+properties, and only the first had been demonstrated.
+
+**Built a flashed-graphic detector.** It reuses the frames already sampled for
+spell-checking, so it costs nothing extra: OCR text is collapsed into runs, and
+a run of one frame is flagged when the same text appears again later in a run
+of two or more. Either appearance alone is unremarkable — a brief one could be
+sampling luck, a long one is just a super — so it is the pairing that makes it
+a defect. A recurring brand tag held properly both times does not trigger it.
+
+**A correction worth recording.** Chasing this, synthetic clips appeared to
+show grid frame timestamps drifting by ~0.6s, which would have made every
+timecode in every report wrong. Three rounds of investigation later, the fault
+was the test harness: clips assembled with `concat` do not have the timing
+their filter expressions imply, and ffmpeg's own accurate seek disagreed with
+wall time on the ruler clip itself (t=59 reading as "second 64" in a 60-second
+clip). The measured grid error of +0.55s sits inside the ±0.5s the ruler's
+one-second granularity produces on its own. **There is no evidence of a
+timestamp bug.** The flashed-graphic detector is therefore tested against
+constructed frames rather than rendered video.
+
+**Also:** sampled frames in the work folder are now named by the moment they
+came from (`t00132.000.png`), so `--keep-work` can answer "what did QC actually
+see at 02:12?" — which is the question this session needed and could not ask.
+
+**Tested:** 327 tests passing (up from 315).
+
+**What this changes about the project's status:** the false-positive rate is
+good and well evidenced. The false-negative rate is now known to be non-zero
+and remains unmeasured. That is the honest summary.

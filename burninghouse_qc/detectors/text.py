@@ -40,6 +40,20 @@ class SampledFrame:
 
 
 @dataclass
+class TextRun:
+    """A stretch of sampled frames showing substantially the same on-screen text."""
+
+    words: frozenset[str]
+    start: float
+    end: float
+    frames: int
+
+    @property
+    def span(self) -> float:
+        return self.end - self.start
+
+
+@dataclass
 class SuspectWord:
     word: str
     occurrences: int
@@ -165,7 +179,7 @@ def extract_grid(path: Path, duration: float, workdir: Path, cfg: TextConfig) ->
     """
     workdir.mkdir(parents=True, exist_ok=True)
     step = effective_interval(duration, cfg)
-    pattern = workdir / "grid_%05d.png"
+    pattern = workdir / "grid_%05d.png"   # renamed below to carry the timestamp
     proc = ffmpeg(
         [
             "-i", str(path),
@@ -178,7 +192,15 @@ def extract_grid(path: Path, duration: float, workdir: Path, cfg: TextConfig) ->
     for index, frame_path in enumerate(sorted(workdir.glob("grid_*.png"))):
         if frame_path.stat().st_size == 0:
             continue
-        frames.append(SampledFrame(timestamp=round(index * step, 3), path=frame_path))
+        timestamp = round(index * step, 3)
+        # Name the file after the moment it came from. With --keep-work this is
+        # what makes the folder answerable: "what did QC see at 02:12?"
+        named = frame_path.with_name(f"t{timestamp:09.3f}.png")
+        try:
+            frame_path.replace(named)
+        except OSError:
+            named = frame_path
+        frames.append(SampledFrame(timestamp=timestamp, path=named))
     if proc.returncode != 0 and not frames:
         return []
     return frames
@@ -190,7 +212,7 @@ def extract_frames(path: Path, timestamps: list[float], workdir: Path) -> list[S
     workdir.mkdir(parents=True, exist_ok=True)
     frames: list[SampledFrame] = []
     for index, timestamp in enumerate(timestamps):
-        out = workdir / f"frame_{index:05d}_{timestamp:09.3f}.png"
+        out = workdir / f"t{timestamp:09.3f}.png"
         proc = ffmpeg(
             [
                 "-ss", f"{timestamp:.3f}",
@@ -331,6 +353,74 @@ def collect_suspects(
     )
 
 
+# --------------------------------------------------------------------------
+# Graphics appearing when they should not
+# --------------------------------------------------------------------------
+
+def frame_signature(frame: SampledFrame, cfg: TextConfig) -> frozenset[str]:
+    """The words on screen in this frame, as something comparable between frames.
+
+    Deliberately includes correctly-spelled words: a graphic flashing on at the
+    wrong moment is a mistake regardless of whether its text is spelled right.
+    """
+    words = {
+        normalise(word.text).lower()
+        for word in frame.words
+        if word.confidence >= cfg.min_confidence
+        and len(normalise(word.text)) >= cfg.min_word_length
+        and normalise(word.text).isalpha()
+    }
+    return frozenset(words)
+
+
+def _overlap(a: frozenset[str], b: frozenset[str]) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / min(len(a), len(b))
+
+
+def build_text_runs(frames: list[SampledFrame], cfg: TextConfig) -> list[TextRun]:
+    """Collapse consecutive frames showing the same text into runs."""
+    runs: list[TextRun] = []
+    current: TextRun | None = None
+    for frame in frames:
+        signature = frame_signature(frame, cfg)
+        if not signature:
+            current = None
+            continue
+        if current is not None and _overlap(current.words, signature) >= cfg.run_match:
+            current.words = current.words | signature
+            current.end = frame.timestamp
+            current.frames += 1
+        else:
+            current = TextRun(signature, frame.timestamp, frame.timestamp, 1)
+            runs.append(current)
+    return runs
+
+
+def find_flashed_graphics(
+    runs: list[TextRun], cfg: TextConfig
+) -> list[tuple[TextRun, TextRun]]:
+    """Graphics that appear briefly, vanish, then appear properly later.
+
+    The signature of the real-world mistake this exists for: a super pops on at
+    the wrong moment, is pulled, and lands properly a few shots later. Either
+    appearance alone is unremarkable — a brief one could be sampling luck, a
+    long one is just a super. It is the pairing that makes it a defect.
+    """
+    flashes: list[tuple[TextRun, TextRun]] = []
+    for index, brief in enumerate(runs):
+        if brief.frames > cfg.flash_max_frames:
+            continue
+        for other in runs[index + 1:]:
+            if other.frames < cfg.flash_min_proper_frames:
+                continue
+            if _overlap(brief.words, other.words) >= cfg.flash_match:
+                flashes.append((brief, other))
+                break
+    return flashes
+
+
 def classify(suspect: SuspectWord, cfg: TextConfig) -> tuple[Severity, str]:
     confident_read = suspect.best_confidence >= cfg.fail_confidence
     repeated = suspect.occurrences >= cfg.fail_min_occurrences
@@ -373,6 +463,13 @@ def annotate_thumbnail(suspect: SuspectWord, workdir: Path) -> Path | None:
             return out
     except OSError:
         return None
+
+
+def _first_frame_path(frames: list[SampledFrame], timestamp: float) -> Path | None:
+    for frame in frames:
+        if abs(frame.timestamp - timestamp) < 1e-6:
+            return frame.path
+    return None
 
 
 def detect(
@@ -425,6 +522,34 @@ def detect(
     stats["scene_changes"] = len(scene_times)
     stats["words_read"] = sum(len(f.words) for f in frames)
     stats["sample_interval"] = round(effective_interval(duration, cfg), 3)
+
+    if cfg.detect_flashed_graphics:
+        runs = build_text_runs(frames, cfg)
+        stats["text_runs"] = len(runs)
+        for brief, proper in find_flashed_graphics(runs, cfg):
+            shown = ", ".join(sorted(brief.words & proper.words)[:5])
+            findings.append(
+                Finding(
+                    detector="text",
+                    kind="flashed_graphic",
+                    severity=Severity.REVIEW,
+                    message=(
+                        f"A graphic appears briefly at {format_timecode(brief.start)}, "
+                        f"then again properly at {format_timecode(proper.start)} — "
+                        f"looks like it was flashed on at the wrong moment."
+                    ),
+                    start=brief.start,
+                    end=brief.end,
+                    confidence=0.6,
+                    detail={
+                        "text": shown,
+                        "proper_appearance": format_timecode(proper.start),
+                        "brief_frames": brief.frames,
+                        "proper_frames": proper.frames,
+                    },
+                    thumbnail=_first_frame_path(frames, brief.start),
+                )
+            )
 
     findings: list[Finding] = []
     for suspect in collect_suspects(frames, speller, cfg):

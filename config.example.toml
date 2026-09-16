@@ -86,6 +86,15 @@ scene_followup_offsets  = [0.15, 0.60, 1.20]
 min_frame_gap           = 0.40
 max_frames              = 600      # ceiling per job, keeps long masters bounded
 
+# Watch for a graphic that appears briefly, vanishes, then appears properly
+# later — a super flashed on at the wrong moment and fixed a few shots on.
+# Either appearance alone is unremarkable; it is the pairing that is a defect.
+detect_flashed_graphics = true
+run_match               = 0.5      # word overlap to call two frames the same graphic
+flash_max_frames        = 1        # a brief appearance is this many frames or fewer
+flash_min_proper_frames = 2        # ...and the proper one at least this many
+flash_match             = 0.6      # word overlap to call them the same graphic
+
 # OCR
 tesseract_lang = "eng"
 tesseract_psm  = 11                # 11 = sparse text, best for burnt-in graphics
