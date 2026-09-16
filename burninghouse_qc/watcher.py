@@ -29,6 +29,15 @@ from .stability import Stability, is_candidate, wait_until_stable
 from .status import StatusFile, running_pid, setup_logging
 
 
+# Suffixes this app writes itself. `Path.suffixes` gives ['.qc', '.html'].
+_OUR_OUTPUT_SUFFIXES = (".qc.html", ".qc.json")
+
+
+def _is_our_output(path: Path) -> bool:
+    name = path.name.lower()
+    return any(name.endswith(suffix) for suffix in _OUR_OUTPUT_SUFFIXES)
+
+
 class _InputHandler(FileSystemEventHandler):
     """Turns filesystem events into queue entries. Does no work itself."""
 
@@ -84,7 +93,14 @@ class QCService:
             if not any(path.name.startswith(prefix) for prefix in self.cfg.watcher.ignore_prefixes)
         ]
         candidates = [path for path in visible if is_candidate(path, self.cfg.watcher)]
-        wrong_format = [path for path in visible if path not in candidates]
+        # Our own reports live beside the renders in the default routing mode.
+        # Counting them as unsupported input every start-up is misleading —
+        # they are output, not something the operator put there by mistake.
+        wrong_format = [
+            path
+            for path in visible
+            if path not in candidates and not _is_our_output(path)
+        ]
 
         queued = 0
         already_done = 0

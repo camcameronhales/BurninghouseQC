@@ -745,3 +745,35 @@ and `enqueue_existing` picked it up again on restart. The design held; the
 tooling around it did not.
 
 **Tested:** 311 tests passing (up from 302).
+
+### Session 17 — 2026-09-16
+
+Reading a real log turned up two things beyond the file being asked about.
+
+**The interruption recovery worked as designed.** 15:48:57 restart, file
+re-queued from the input folder, QC restarted at 15:49:13 — exactly the path
+Session 16 predicted, confirmed in production rather than argued from the code.
+
+**Two watchers had been running at once**, on 14 Sep and again on 16 Sep. The
+Session 11 guard caught both and logged a warning, and it only fires when the
+other process is genuinely alive, so these were real. Most likely a manual
+`bhqc watch` left running alongside the background service. Worth noting the
+guard warns but does not prevent — deliberate, since refusing to start would
+be worse if the detection were ever wrong, but it does mean the warning has to
+be acted on.
+
+**Fixed: our own reports were being counted as unsupported input.** Every
+start-up logged "Ignoring 7 file(s) that are not .mov or .mp4 (.html)" — those
+seven were the `.qc.html` reports the app itself had written, sitting beside
+the renders as the default routing mode intends. Reporting output as
+unrecognised input every time is exactly the kind of line that trains people
+to stop reading the log. Files matching `.qc.html` / `.qc.json` are now
+excluded from that count.
+
+**Also learned:** WestUrban_AUG_2026.mp4 ran more than ten minutes of QC
+without finishing, which at the measured ~16s per minute implies 35-40 minutes
+of video. Every clip measured until now has been 1-2 minutes. Long-form is a
+different shape of job and the frame budget has never been exercised against
+it.
+
+**Tested:** 314 tests passing (up from 311).

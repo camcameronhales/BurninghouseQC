@@ -349,3 +349,44 @@ class TestInterruptedJobs:
         from burninghouse_qc.status import busy_with
 
         assert busy_with(tmp_path / "nope.json") is None
+
+
+class TestOurOwnOutput:
+    """In the default routing mode reports sit beside the renders. They are
+    output, not unsupported input, and saying otherwise every start-up trains
+    people to ignore the line."""
+
+    def test_reports_are_not_counted_as_unsupported_input(self, service):
+        (service.cfg.paths.input / "Spot.mov").write_bytes(b"x")
+        (service.cfg.paths.input / "Spot.qc.html").write_text("<html>")
+        (service.cfg.paths.input / "Spot.qc.json").write_text("{}")
+
+        service.enqueue_existing()
+
+        text = service.logger.text
+        assert "Queued 1 file(s)" in text
+        assert "Ignoring" not in text, text
+
+    def test_genuinely_unsupported_files_are_still_called_out(self, service):
+        (service.cfg.paths.input / "Spot.mov").write_bytes(b"x")
+        (service.cfg.paths.input / "Spot.qc.html").write_text("<html>")
+        (service.cfg.paths.input / "notes.txt").write_text("x")
+
+        service.enqueue_existing()
+
+        text = service.logger.text
+        assert "Ignoring 1 file(s)" in text
+        assert ".txt" in text
+        assert ".html" not in text
+
+    def test_a_folder_of_only_reports_does_not_look_like_a_mistake(self, service):
+        """Not "empty" — it has files in it — but there is nothing to check,
+        and nothing here is a problem to report."""
+        for name in ("a.qc.html", "b.qc.html"):
+            (service.cfg.paths.input / name).write_text("<html>")
+
+        service.enqueue_existing()
+
+        assert "Nothing to do yet" in service.logger.text
+        assert "Ignoring" not in service.logger.text
+        assert "warning" not in [level for level, _ in service.logger.messages]
