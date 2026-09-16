@@ -1,21 +1,19 @@
-"""Filing a checked render: the report always, the file itself only if asked.
+"""Filing a checked render: the report is written, the render is not touched.
 
-Four modes, set by `routing.mode`:
+Two modes, set by `routing.mode`:
 
   alongside    the default. The report is written next to the render, and
                nothing is moved or sorted. Reports get read whatever the
                verdict, so they belong with the file they describe; the verdict
                is inside the report. This is the only mode that writes into the
                folder being watched.
-  report_only  the render is never touched and nothing is written beside it;
-               the report is filed in pass/review/error instead. Use this when
-               the watched folder must stay untouched.
-  copy         the original stays put; a verified copy lands in the verdict
-               folder.
-  move         the render is relocated into the verdict folder.
+  report_only  nothing is written beside the render; the report is filed in
+               pass/review/error instead. Use this when the watched folder must
+               stay untouched.
 
-In every mode the report is written first, so a transfer that fails still
-leaves an explanation behind.
+Neither mode moves, renames or alters the render. Sorting the file into verdict
+folders was tried and dropped: the report is read either way, and the decision
+about where a finished render belongs is one a person makes, not the QC.
 """
 
 from __future__ import annotations
@@ -28,26 +26,20 @@ from .config import Config
 from .findings import Verdict
 from .pipeline import QCResult
 from .report import write_report
-from .transfer import FileSnapshot, TransferError, safe_copy, safe_move
+from .transfer import FileSnapshot
 
 ALONGSIDE = "alongside"
 REPORT_ONLY = "report_only"
-COPY = "copy"
-MOVE = "move"
-VALID_MODES = (ALONGSIDE, REPORT_ONLY, COPY, MOVE)
+VALID_MODES = (ALONGSIDE, REPORT_ONLY)
 
 
 @dataclass
 class RouteOutcome:
     verdict: Verdict
-    destination: Path       # where the render now is (unchanged in report_only)
+    destination: Path       # always the render, which is never relocated
     report: Path            # the HTML report
-    action: str             # "left_in_place" | "copied" | "moved"
+    action: str             # "left_in_place" — the only outcome there is
     warning: str | None = None
-
-    @property
-    def moved(self) -> bool:
-        return self.action == "moved"
 
     @property
     def source_untouched(self) -> bool:
@@ -74,15 +66,12 @@ def unique_path(target: Path) -> Path:
     raise FileExistsError(f"Could not find a free name for {target}")
 
 
-def resolve_mode(cfg: Config, move: bool | None = None) -> str:
-    """`move=False` from the CLI forces a non-moving mode regardless of config."""
+def resolve_mode(cfg: Config) -> str:
     mode = (cfg.routing.mode or ALONGSIDE).strip().lower()
     if mode not in VALID_MODES:
         raise ValueError(
             f"routing.mode must be one of {', '.join(VALID_MODES)} — got {mode!r}"
         )
-    if move is False and mode in (COPY, MOVE):
-        return ALONGSIDE
     return mode
 
 
@@ -115,31 +104,31 @@ def _place_symlink(source: Path, target_dir: Path, stem: str) -> str | None:
 def route(
     result: QCResult,
     cfg: Config,
-    move: bool | None = None,
     source_snapshot: FileSnapshot | None = None,
 ) -> RouteOutcome:
     """File the result. Returns where everything ended up.
 
     `source_snapshot` is what the file looked like when QC started. If it no
-    longer matches, the render was rewritten while we were checking it, and the
-    report describes a file that no longer exists — so nothing is moved or
-    copied and the caller is warned.
+    longer matches, the render was rewritten while we were checking it and the
+    report describes a version that no longer exists, so the caller is warned.
     """
-    mode = resolve_mode(cfg, move)
+    mode = resolve_mode(cfg)
     if mode != ALONGSIDE:
         target_dir = destination_dir(result.verdict, cfg)
         target_dir.mkdir(parents=True, exist_ok=True)
 
     warning: str | None = None
+    if not result.source.exists():
+        # Filing a report for a render that is no longer there is still worth
+        # doing — it is the only record that the file was ever checked — but
+        # the report should not imply the file is sitting where it says.
+        warning = f"{result.source.name} disappeared before its report was filed."
     if source_snapshot is not None and result.source.exists():
         if not source_snapshot.matches(FileSnapshot.of(result.source)):
             warning = (
                 f"{result.source.name} changed while it was being checked — this "
                 f"report describes the earlier version, and the file was left alone."
             )
-            # Do not relocate a file we no longer understand; still report on it.
-            if mode in (COPY, MOVE):
-                mode = ALONGSIDE
 
     if mode == ALONGSIDE:
         # The report lives with the render. Nothing is moved, nothing is sorted.
@@ -154,56 +143,20 @@ def route(
             warning=warning,
         )
 
-    if mode == REPORT_ONLY:
-        stem = unique_stem(
-            target_dir, result.source.stem, (".qc.html", result.source.suffix)
-        )
-        report_path = write_report(result, target_dir, cfg.report, stem=stem)
-        if cfg.routing.symlink_in_verdict_folder:
-            link_warning = _place_symlink(result.source, target_dir, stem)
-            warning = warning or link_warning
-        return RouteOutcome(
-            verdict=result.verdict,
-            destination=result.source,
-            report=report_path,
-            action="left_in_place",
-            warning=warning,
-        )
-
-    stem = unique_stem(target_dir, result.source.stem, (".qc.html", result.source.suffix))
-    final_video = target_dir / f"{stem}{result.source.suffix}"
+    # report_only: the only other mode. Left as a fall-through rather than a
+    # second `if` so that adding a mode without handling it here is a syntax-
+    # level mistake, not a silent None.
+    stem = unique_stem(
+        target_dir, result.source.stem, (".qc.html", result.source.suffix)
+    )
     report_path = write_report(result, target_dir, cfg.report, stem=stem)
-
-    if not result.source.exists():
-        return RouteOutcome(
-            verdict=result.verdict,
-            destination=result.source,
-            report=report_path,
-            action="left_in_place",
-            warning=f"{result.source.name} disappeared before it could be filed.",
-        )
-
-    try:
-        if mode == COPY:
-            safe_copy(result.source, final_video, verify_hash=cfg.routing.verify_hash)
-            action = "copied"
-        else:
-            safe_move(result.source, final_video, verify_hash=cfg.routing.verify_hash)
-            action = "moved"
-    except TransferError as exc:
-        # The source is intact — say what happened and leave it where it is.
-        return RouteOutcome(
-            verdict=result.verdict,
-            destination=result.source,
-            report=report_path,
-            action="left_in_place",
-            warning=str(exc),
-        )
-
+    if cfg.routing.symlink_in_verdict_folder:
+        link_warning = _place_symlink(result.source, target_dir, stem)
+        warning = warning or link_warning
     return RouteOutcome(
         verdict=result.verdict,
-        destination=final_video,
+        destination=result.source,
         report=report_path,
-        action=action,
+        action="left_in_place",
         warning=warning,
     )

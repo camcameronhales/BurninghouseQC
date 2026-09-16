@@ -102,16 +102,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.mode:
         cfg.routing.mode = args.mode
     result = run_qc(source, cfg)
-    outcome = route(
-        result, cfg, move=False if args.no_move else None, source_snapshot=result.snapshot
-    )
+    outcome = route(result, cfg, source_snapshot=result.snapshot)
     _print_result(result, outcome.report)
-    described = {
-        "left_in_place": f"  Source left untouched: {outcome.destination}",
-        "copied": f"  Copied to: {outcome.destination}",
-        "moved": f"  Moved to: {outcome.destination}",
-    }[outcome.action]
-    print(described)
+    print(f"  Source left untouched: {outcome.destination}")
     if outcome.warning:
         print(f"  WARNING: {outcome.warning}")
     print()
@@ -341,12 +334,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     consequence = {
         "alongside": "the report is written next to each render; nothing is moved",
         "report_only": "renders are untouched; reports are filed in pass/review/error",
-        "copy": "the original stays put; a verified copy is filed",
-        "move": "renders are RELOCATED out of the input folder",
     }.get(mode, "UNKNOWN MODE — this will fail at routing time")
     print(f"\n  Routing mode: {mode} — {consequence}")
-    if mode == "move":
-        print("    Only use 'move' on a QC folder this app owns, never on shared storage.")
     print("    Run 'bhqc check-access' to verify the account's permissions.")
 
     folders = [("input", cfg.paths.input), ("work", cfg.paths.work)]
@@ -584,9 +573,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_cmd = sub.add_parser("run", help="QC one file and route it")
     run_cmd.add_argument("file")
-    run_cmd.add_argument("--no-move", action="store_true",
-                         help="Never relocate the render, whatever the configured mode")
-    run_cmd.add_argument("--mode", choices=["alongside", "report_only", "copy", "move"],
+    run_cmd.add_argument("--mode", choices=["alongside", "report_only"],
                          default=None, help="Override routing.mode for this run")
     run_cmd.set_defaults(func=cmd_run)
 

@@ -38,11 +38,12 @@ permissions disagree.
 | open + read | FFmpeg decoding for QC | nothing |
 | copy to local scratch | if the input folder is on a network mount | the *local* work folder |
 | write report | after QC | beside the render (`alongside`) or the verdict folder (`report_only`) |
-| write symlink | after QC, optional, verdict-folder modes only | the pass/review/error folder |
+| write symlink | after QC, optional, `report_only` only | the pass/review/error folder |
 
-There is no other code path that touches the source. The one function that can
-delete a source file is `transfer.safe_move`, and it is unreachable unless you
-set `routing.mode = "move"` yourself.
+There is no other code path that touches the source, and nothing in the app
+deletes or relocates a render at all: the modes that did (`copy` and `move`)
+were removed along with `transfer.safe_move`. The guarantee is now structural
+rather than a matter of configuration.
 
 You can verify that claim rather than take it on trust:
 
@@ -50,9 +51,10 @@ You can verify that claim rather than take it on trust:
 grep -rn "unlink\|shutil.move\|os.replace\|write_text" burninghouse_qc/
 ```
 
-Everything that comes back writes into a QC-owned folder, except `safe_move`.
+Everything that comes back writes into a QC-owned folder. Nothing deletes or
+relocates a render.
 
-## The three modes
+## The two modes
 
 ```toml
 [routing]
@@ -70,26 +72,6 @@ from the same place they read the report.
 - **The catch:** nothing about the input folder changes when a file is done, so
   the app keeps a ledger (`qc_root/processed.json`) of what it has already
   checked. Without it, a service restart would re-QC the entire folder.
-
-### `copy` — a filed copy, original untouched
-
-A verified copy of the render lands in the verdict folder; the original stays
-put. Use this if you want a self-contained "failed QC" pile without touching
-the server.
-
-- **Server writes:** none. **Storage cost:** doubles.
-
-### `move` — relocates the render
-
-**Only point this at a QC folder the app owns outright.** Never at shared
-storage where other people or systems expect files to stay put.
-
-Even here the transfer is defensive. A move within one filesystem is a single
-atomic rename. A move across filesystems — which any move off a share is —
-copies to a temporary `.qc-partial` name, verifies the size (and the checksum
-if `verify_hash = true`), atomically renames it into place, and only then
-deletes the original. If anything fails, the partial file is removed and the
-source is left untouched.
 
 ## The safeguards that apply in every mode
 
@@ -145,9 +127,9 @@ read-only account ([`readonly-account.md`](readonly-account.md)) so the NAS
 enforces what the config already promises. Run alongside the manual QC and
 compare verdicts.
 
-**Phase 3 — only if you want it.** Once the verdicts are trusted you *could*
-use `copy` for a self-contained failed-QC pile. There is no strong reason to
-ever use `move` against shared storage, and the default will stay `report_only`.
+**Phase 3.** There is no phase 3 against shared storage. `report_only` is the
+end state: the app never writes to the share, and the reports are read from the
+verdict folders.
 
 ## Permissions: belt and braces
 
@@ -170,8 +152,9 @@ bhqc -c config.toml check-access
 It tries the operations rather than reading the config — a zero-byte probe file
 created and immediately deleted in each folder, which is how a read-only share
 is confirmed to actually be read-only. It also catches a config that asks for
-something the permissions forbid, like `mode = "move"` against a read-only
-share, and exits non-zero so it can gate a setup script.
+something the permissions forbid, like `mode = "alongside"` against a read-only
+share — which needs to write the report next to the render — and exits non-zero
+so it can gate a setup script.
 
 ## Checking what it did
 

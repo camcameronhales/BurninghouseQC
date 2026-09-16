@@ -190,7 +190,7 @@ burninghouse_qc/
     black.py        blackdetect
     silence.py      silencedetect
     text.py         sampling → OCR → spell-check + flashed graphics
-  transfer.py       verified copy/move (unused in the default mode)
+  transfer.py       verified copy, used to stage a network file locally
   ledger.py         what has already been checked
   service.py        the launchd agent
   notify.py         desktop banners

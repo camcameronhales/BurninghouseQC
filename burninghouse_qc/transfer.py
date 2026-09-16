@@ -1,15 +1,16 @@
-"""Moving and copying deliverables without ever risking the only copy.
+"""Copying a file without ever risking the only copy.
 
 The rules this module exists to enforce:
 
-  * never delete a source file until a verified copy exists somewhere else;
   * never leave a half-written file where a finished one is expected;
   * never start a copy that will not fit.
 
-A same-filesystem move is a single atomic rename. A cross-filesystem move —
-which is what any move off a network share is — is a copy, a verification and
-only then a delete, with the copy landing under a temporary name so an
-interrupted transfer can never be mistaken for a finished deliverable.
+The copy lands under a temporary name and is renamed into place only once it
+is complete, so an interrupted transfer can never be mistaken for a finished
+file. `verify_hash` additionally checksums it against the source.
+
+Routing no longer copies or moves renders, so the caller here is the pipeline,
+staging a network file to local scratch before reading it several times over.
 """
 
 from __future__ import annotations
@@ -52,13 +53,6 @@ class FileSnapshot:
             return False
         # mtime resolution differs across filesystems (SMB is often 1-2s).
         return self.size == other.size and abs(self.mtime - other.mtime) < 2.0
-
-
-def same_filesystem(a: Path, b: Path) -> bool:
-    try:
-        return a.stat().st_dev == b.stat().st_dev
-    except OSError:
-        return False
 
 
 def free_space(directory: Path) -> int:
@@ -120,29 +114,4 @@ def safe_copy(source: Path, target: Path, verify_hash: bool = False) -> Path:
     except OSError as exc:
         partial.unlink(missing_ok=True)
         raise TransferError(f"Could not copy {source.name}: {exc}") from exc
-    return target
-
-
-def safe_move(source: Path, target: Path, verify_hash: bool = False) -> Path:
-    """Relocate a file, deleting the original only once a verified copy exists."""
-    target.parent.mkdir(parents=True, exist_ok=True)
-
-    if same_filesystem(source, target.parent):
-        # Atomic: the file is never in two places, nor in neither.
-        try:
-            os.replace(source, target)
-            return target
-        except OSError as exc:
-            raise TransferError(f"Could not move {source.name}: {exc}") from exc
-
-    safe_copy(source, target, verify_hash=verify_hash)
-    try:
-        source.unlink()
-    except OSError as exc:
-        # The copy is good, so nothing is lost — but say so loudly, because the
-        # file now exists in both places.
-        raise TransferError(
-            f"{source.name} was copied to {target} but the original could not "
-            f"be removed ({exc}). Both copies now exist."
-        ) from exc
     return target

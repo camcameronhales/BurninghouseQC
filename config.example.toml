@@ -148,17 +148,11 @@ skip_proper_nouns = true
 #   "report_only" — never write beside the render; file the report in
 #                   pass/review/error instead. Use this when the watched folder
 #                   must stay untouched (see docs/server-safety.md).
-#   "copy"        — leave the original; put a verified copy in the verdict folder.
-#   "move"        — relocate the render. QC folders this app owns ONLY.
 mode = "alongside"
 
-# For the verdict-folder modes only: drop a symlink beside the report pointing
-# at the original. Pointless in "alongside", where they already sit together.
+# In "report_only" only: drop a symlink beside the report pointing at the
+# original. Pointless in "alongside", where they already sit together.
 symlink_in_verdict_folder = false
-
-# Checksum a copy against its source before trusting it. Doubles the read cost
-# of a copy; worth turning on if you ever set mode = "move".
-verify_hash = false
 
 # QC reads the file several times over. When the input folder is on a network
 # mount, copy it to local scratch once and analyse that instead — one read

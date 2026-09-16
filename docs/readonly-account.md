@@ -240,8 +240,8 @@ nothing else (an NLE, a sync client, a backup agent) has the folder open.
 ## What this does and doesn't protect against
 
 **Does:** any write from this app to the renders share — a bug, a
-misconfiguration, a future change, or `mode = "move"` set by mistake. All of
-them fail at the filesystem instead of doing damage.
+misconfiguration, or a future change. All of them fail at the filesystem
+instead of doing damage.
 
 **Doesn't:** anything else on the machine. This account is for the QC service;
 it isn't a substitute for backups, and it doesn't protect the share from the

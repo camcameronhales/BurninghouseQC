@@ -171,18 +171,15 @@ Set by `routing.mode`:
 | --- | --- | --- | --- |
 | **`alongside`** (default) | next to the render | untouched | the normal case |
 | `report_only` | a `pass`/`review`/`error` folder | untouched, nothing written beside it | a folder that must stay untouched |
-| `copy` | verdict folder | original stays, verified copy filed | a self-contained failed-QC pile |
-| `move` | verdict folder | relocated | a QC folder this app owns outright |
 
-Even `move` is defensive: same-filesystem moves are a single atomic rename, and
-cross-filesystem moves copy to a `.qc-partial` name, verify the size (and
-checksum, optionally), rename into place, and only then delete the original. A
-failed transfer always leaves the source intact.
+Neither mode moves, renames or alters the render — there is no mode that does.
+Sorting a checked file into verdict folders was built and then dropped: the
+report is read either way, and where a finished render belongs is a decision a
+person makes with the report in front of them.
 
-Three other guards apply in every mode: a preflight free-space check, a
-never-overwrite rule that suffixes `name (1)` for reports as well as renders,
-and a rewrite check — if the file changed while QC was running, it's left alone
-and the report says so.
+Two guards apply in both modes: a never-overwrite rule that suffixes
+`name (1)` for reports, and a rewrite check — if the file changed while QC was
+running, the report says so.
 
 ### Notifications
 

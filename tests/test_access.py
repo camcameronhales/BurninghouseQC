@@ -159,19 +159,18 @@ def test_report_only_is_always_fine(cfg):
     assert check_routing_consistency(cfg, input_writable=False)[0].status is Status.OK
 
 
-def test_move_against_a_read_only_share_is_caught(cfg):
-    """Every file would fail to move — better to say so before it runs."""
-    cfg.routing.mode = "move"
+def test_alongside_against_a_read_only_share_is_caught(cfg):
+    """No report could be written beside the render — better to say so first."""
+    cfg.routing.mode = "alongside"
     check = check_routing_consistency(cfg, input_writable=False)[0]
     assert check.status is Status.FAIL
-    assert "read-only" in check.detail
+    assert "not writable" in check.detail
 
 
-def test_move_against_a_writable_share_warns(cfg):
-    cfg.routing.mode = "move"
+def test_alongside_against_a_writable_share_is_fine(cfg):
+    cfg.routing.mode = "alongside"
     check = check_routing_consistency(cfg, input_writable=True)[0]
-    assert check.status is Status.WARN
-    assert "RELOCATED" in check.detail
+    assert check.status is Status.OK
 
 
 def test_an_invalid_mode_is_caught_before_it_runs(cfg):

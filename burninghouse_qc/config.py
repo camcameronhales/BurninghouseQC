@@ -238,16 +238,10 @@ class RoutingConfig:
     # "alongside"   — write the report next to the render. No sorting folders,
     #                 no file movement. The verdict is inside the report.
     # "report_only" — leave the render, file the report in pass/review/error.
-    # "copy"        — leave the original, put a verified copy in the verdict
-    #                 folder.
-    # "move"        — relocate the render into the verdict folder.
     mode: str = "alongside"
-    # For the verdict-folder modes: drop a symlink beside the report pointing at
-    # the original. Irrelevant in "alongside", where they are already together.
+    # In "report_only": drop a symlink beside the report pointing at the
+    # original. Irrelevant in "alongside", where they are already together.
     symlink_in_verdict_folder: bool = False
-    # Checksum a copy against its source before trusting it. Doubles the read
-    # cost of a copy; worth it if the app is ever set to "move".
-    verify_hash: bool = False
     # Copy the render to local scratch and analyse that instead of reading it
     # over the network several times. One network read instead of ~3, and the
     # server is not left with a file handle open for minutes at a time.

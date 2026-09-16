@@ -240,41 +240,12 @@ def check_routing_consistency(cfg: Config, input_writable: bool | None) -> list[
                 detail="report_only — renders are never touched",
             )
         ]
-    if mode == "copy":
-        return [
-            Check(
-                name="routing mode",
-                status=Status.OK,
-                detail="copy — the original stays put, a verified copy is filed",
-            )
-        ]
-    if mode == "move":
-        if input_writable is False:
-            return [
-                Check(
-                    name="routing mode",
-                    status=Status.FAIL,
-                    detail="move — but the input folder is read-only, so every "
-                           "file will fail to move",
-                    advice="Set routing.mode = \"report_only\", or point input at a "
-                           "folder this app owns.",
-                )
-            ]
-        return [
-            Check(
-                name="routing mode",
-                status=Status.WARN,
-                detail="move — renders will be RELOCATED out of the input folder",
-                advice="Only safe on a QC folder this app owns outright. Never on "
-                       "shared storage.",
-            )
-        ]
     return [
         Check(
             name="routing mode",
             status=Status.FAIL,
             detail=f"{mode!r} is not a valid mode",
-            advice='Use "report_only", "copy" or "move".',
+            advice='Use "alongside" or "report_only".',
         )
     ]
 

@@ -12,7 +12,6 @@ from burninghouse_qc.transfer import (
     check_space,
     file_digest,
     safe_copy,
-    safe_move,
 )
 
 
@@ -77,58 +76,6 @@ def test_copy_refuses_to_start_without_room(tmp_path, monkeypatch):
     monkeypatch.setattr(transfer, "free_space", lambda _d: 1000)
     with pytest.raises(TransferError, match="Not enough room"):
         check_space(source, tmp_path)
-
-
-def test_same_filesystem_move_is_atomic_and_complete(tmp_path):
-    source = make_file(tmp_path / "src" / "a.mov", b"payload")
-    target = safe_move(source, tmp_path / "dst" / "a.mov")
-    assert target.read_bytes() == b"payload"
-    assert not source.exists()
-
-
-def test_cross_filesystem_move_verifies_before_deleting(tmp_path, monkeypatch):
-    """The delete must happen only after a verified copy exists."""
-    source = make_file(tmp_path / "src" / "a.mov", b"payload")
-    target = tmp_path / "dst" / "a.mov"
-    order: list[str] = []
-
-    monkeypatch.setattr(transfer, "same_filesystem", lambda a, b: False)
-    real_copy = transfer.shutil.copy2
-
-    def tracked_copy(src, dst, **kwargs):
-        order.append("copy")
-        return real_copy(src, dst, **kwargs)
-
-    real_unlink = Path.unlink
-
-    def tracked_unlink(self, *args, **kwargs):
-        if self == source:
-            order.append("delete")
-        return real_unlink(self, *args, **kwargs)
-
-    monkeypatch.setattr(transfer.shutil, "copy2", tracked_copy)
-    monkeypatch.setattr(Path, "unlink", tracked_unlink)
-
-    safe_move(source, target)
-    assert order == ["copy", "delete"]
-    assert target.read_bytes() == b"payload"
-    assert not source.exists()
-
-
-def test_a_failed_cross_filesystem_copy_never_deletes_the_source(tmp_path, monkeypatch):
-    source = make_file(tmp_path / "src" / "a.mov", b"payload")
-
-    monkeypatch.setattr(transfer, "same_filesystem", lambda a, b: False)
-
-    def boom(*args, **kwargs):
-        raise OSError("network went away mid-copy")
-
-    monkeypatch.setattr(transfer.shutil, "copy2", boom)
-
-    with pytest.raises(TransferError):
-        safe_move(source, tmp_path / "dst" / "a.mov")
-    assert source.exists(), "the render must survive a failed move"
-    assert source.read_bytes() == b"payload"
 
 
 def test_digest_distinguishes_different_content(tmp_path):
