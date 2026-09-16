@@ -50,6 +50,7 @@ from burninghouse_qc.detectors.text import (
     build_text_runs,
     find_flashed_graphics,
     frame_signature,
+    is_signature_token,
     ocr_frame,
     _overlap,
 )
@@ -102,14 +103,20 @@ def widest_gap(frames, run, cfg) -> float | None:
 
 
 def why_dropped(word, cfg) -> str | None:
-    """Which `frame_signature` filter discards this word, if any."""
+    """Which `frame_signature` filter discards this word, if any.
+
+    The last test calls `is_signature_token` rather than restating it. An
+    earlier version inlined the rule, and when the rule changed this went on
+    reporting URLs as dropped while the summary above it listed them as kept —
+    a diagnostic disagreeing with the thing it is meant to explain.
+    """
     clean = normalise(word.text)
     if word.confidence < cfg.min_confidence:
         return f"confidence {word.confidence:.0f} < {cfg.min_confidence:.0f}"
     if len(clean) < cfg.min_word_length:
         return f"{len(clean)} chars < min_word_length {cfg.min_word_length}"
-    if not clean.isalpha():
-        return "not purely alphabetic"
+    if not is_signature_token(clean):
+        return "neither a word nor a domain"
     return None
 
 
