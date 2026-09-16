@@ -60,10 +60,22 @@ from burninghouse_qc.spelling import normalise
 FRAME_NAME = re.compile(r"^t(?P<t>\d+\.\d+)\.png$")
 
 
+def frames_dir(workdir: Path) -> Path:
+    """Where the sampled frames actually are.
+
+    `text.detect` extracts into `<workdir>/frames`, so a job folder from
+    `--keep-work` holds a `frames/` subdirectory rather than the PNGs
+    themselves. Accept either, so pointing this at the job folder — the
+    obvious thing to do — works.
+    """
+    nested = workdir / "frames"
+    return nested if nested.is_dir() else workdir
+
+
 def find_frames(workdir: Path, start: float, end: float) -> tuple[list[Path], int]:
     """Frames inside the window, plus how many were in the folder overall."""
     everything = []
-    for path in workdir.glob("t*.png"):
+    for path in frames_dir(workdir).glob("t*.png"):
         match = FRAME_NAME.match(path.name)
         if match:
             everything.append((float(match.group("t")), path))
@@ -117,6 +129,8 @@ def main() -> int:
     paths, total = find_frames(args.workdir, args.start, args.end)
 
     print(f"workdir            {args.workdir}")
+    if frames_dir(args.workdir) != args.workdir:
+        print(f"frames             {frames_dir(args.workdir)}")
     print(f"window             {args.start:.1f}s - {args.end:.1f}s "
           f"({format_timecode(args.start)} - {format_timecode(args.end)})")
     print(f"frames in window   {len(paths)} of {total} in the folder")
@@ -128,7 +142,7 @@ def main() -> int:
 
     if not paths:
         print("No frames in that window. Widen it with --from/--to, or check that")
-        print("the scan was run with --keep-work.")
+        print("the run was given --keep-work. Frames live in <job folder>/frames.")
         return 1
 
     frames: list[SampledFrame] = []
