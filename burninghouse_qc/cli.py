@@ -547,6 +547,25 @@ def cmd_uninstall_service(args: argparse.Namespace) -> int:
     return 0
 
 
+# Options declared on the top-level parser only work before the subcommand:
+# `bhqc --keep-work scan FILE`, never `bhqc scan FILE --keep-work`. That is how
+# argparse works and it is not how anyone types. Repeating them on each
+# subcommand with SUPPRESS lets both forms work, without the subcommand's
+# default clobbering a value given before it.
+_GLOBAL_OPTIONS = (
+    (("-c", "--config"), {"help": "Path to config.toml"}),
+    (("--root",), {"help": "Override the QC folder root"}),
+    (("--keep-work",), {"action": "store_true",
+                        "help": "Keep extracted frames for threshold tuning"}),
+    (("-v", "--verbose"), {"action": "store_true"}),
+)
+
+
+def _add_global_options(subparser: argparse.ArgumentParser) -> None:
+    for flags, options in _GLOBAL_OPTIONS:
+        subparser.add_argument(*flags, default=argparse.SUPPRESS, **options)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bhqc", description="Burninghouse video QC")
     parser.add_argument("--version", action="version", version=f"burninghouse-qc {__version__}")
@@ -626,6 +645,9 @@ def build_parser() -> argparse.ArgumentParser:
         "uninstall-service", help="Remove the background service"
     )
     uninstall.set_defaults(func=cmd_uninstall_service)
+
+    for subparser in sub.choices.values():
+        _add_global_options(subparser)
     return parser
 
 

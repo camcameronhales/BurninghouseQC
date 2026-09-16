@@ -882,3 +882,17 @@ see at 02:12?" — which is the question this session needed and could not ask.
 **What this changes about the project's status:** the false-positive rate is
 good and well evidenced. The false-negative rate is now known to be non-zero
 and remains unmeasured. That is the honest summary.
+
+### Session 21 — 2026-09-16
+
+`bhqc scan FILE --keep-work` failed with "unrecognized arguments". The flag was
+declared only on the top-level parser, so argparse required
+`bhqc --keep-work scan FILE` — which is how argparse works and not how anyone
+types, least of all when following an instruction that put the flag last.
+
+`--keep-work`, `--config`, `--root` and `--verbose` are now accepted on either
+side of the subcommand. The subcommand copies use `argparse.SUPPRESS` as their
+default, so a value given before the subcommand is not clobbered by the
+subcommand's own default — the standard argparse trap, now covered by a test.
+
+**Tested:** 331 tests passing (up from 327).

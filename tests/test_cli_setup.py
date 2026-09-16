@@ -185,3 +185,43 @@ def test_force_does_apply_a_new_input_folder(tmp_path):
     assert main(["init", "-o", str(config), "--input", str(wanted), "--force"]) == 0
     assert Config.load(config).paths.input == wanted
     assert wanted.is_dir()
+
+
+class TestFlagPlacement:
+    """Global flags declared on the top-level parser only work before the
+    subcommand, which is how argparse works and not how anyone types."""
+
+    def _parse(self, argv):
+        from burninghouse_qc.cli import build_parser
+
+        return build_parser().parse_args(argv)
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["--keep-work", "scan", "f.mov"],
+            ["scan", "f.mov", "--keep-work"],
+        ],
+    )
+    def test_keep_work_works_either_side_of_the_subcommand(self, argv):
+        assert self._parse(argv).keep_work is True
+
+    def test_it_still_defaults_to_off(self):
+        assert self._parse(["scan", "f.mov"]).keep_work is False
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["-c", "a.toml", "scan", "f.mov"],
+            ["scan", "f.mov", "-c", "a.toml"],
+        ],
+    )
+    def test_config_works_either_side(self, argv):
+        assert self._parse(argv).config == "a.toml"
+
+    def test_a_flag_given_before_is_not_clobbered_by_the_subcommand_default(self):
+        """The argparse trap this guards against: a subparser's own default
+        overwriting a value the user already supplied."""
+        args = self._parse(["--keep-work", "-c", "a.toml", "run", "f.mov"])
+        assert args.keep_work is True
+        assert args.config == "a.toml"
