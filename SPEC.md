@@ -806,13 +806,35 @@ blunt.
 `[service] process_type` and `nice` are now configurable and default to
 `Standard` with `nice = 5`, which yields to the editor without being throttled.
 
-**Not yet proven.** Machine contention and the throttling class are both
-consistent with the evidence and cannot be separated remotely. The test that
-distinguishes them is running the same file through `bhqc scan` in Terminal,
-where neither applies.
+**Confirmed in Session 19.** The same file run through `bhqc scan` in Terminal,
+outside the throttled service, took **111.9s against 784s** — a 7x difference
+attributable to the ProcessType setting.
 
 **Worth noting on the QC itself:** 41 scene changes and 151 frames produced no
 text findings at all. The only flag was 2.18s of mid-programme silence, which
 is a fair thing to raise. No false positives on cut-heavy graded material.
 
 **Tested:** 315 tests passing.
+
+### Session 19 — 2026-09-16
+
+The throttling diagnosis holds: WestUrban run through `bhqc scan` in Terminal
+took **111.9s against the service's 784s**. Seven times faster for identical
+work, which is the ProcessType setting and nothing else.
+
+A second, smaller factor is now visible in the same numbers. Per sampled frame:
+
+    MMR interview     126.8s video,  85 frames,  33.3s QC   0.39 s/frame
+    WestUrban         142.4s video, 151 frames, 111.9s QC   0.74 s/frame
+
+Nearly twice the cost per frame, and nearly twice as many frames. Both trace to
+the 41 scene changes: follow-up frames after a cut are grabbed by individual
+ffmpeg seek at roughly 0.4s each, against 0.03s for a frame from the
+single-pass grid, and cut-heavy graded footage gives Tesseract more to chew on.
+
+At 112s for a 2m22s clip it is comfortably faster than real time, so this is
+noted rather than acted on. The obvious lever — OCR is serial, and the machine
+has cores to spare — is deliberately **not** being pulled without asking,
+because it trades directly against the reason the service is niced in the first
+place: staying out of the way of whoever is editing. Fast and greedy is not
+obviously better than slow and invisible on a shared edit machine.
