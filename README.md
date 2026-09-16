@@ -20,6 +20,9 @@ Every file gets a report and the report sits next to the file it describes.
 Nothing is moved, renamed or sorted into folders — the verdict is inside the
 report, which gets read either way.
 
+> **Handing this over, or picking it up cold?** `SPEC.md` is the current-state
+> document: what works, what is proven, what is not, and the one open problem.
+>
 > **Setting this up? Start with
 > [`docs/local-trial.md`](docs/local-trial.md)** — the step-by-step for
 > running it on one machine against local files.
