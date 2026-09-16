@@ -896,3 +896,31 @@ default, so a value given before the subcommand is not clobbered by the
 subcommand's own default — the standard argparse trap, now covered by a test.
 
 **Tested:** 331 tests passing (up from 327).
+
+### Session 22 — 2026-09-16
+
+**Shipped a crash in the flashed-graphic detector, caught on the first real
+run.** `findings.append` was called before the list it appends to was created —
+an UnboundLocalError that took the entire text detector down, so spell-checking
+was skipped on that file too. The report said so plainly ("the text detector
+failed to run... this file was not fully checked"), which is the one thing that
+went right.
+
+**Why 333 tests passed anyway, which is the part worth remembering.** The buggy
+line sat inside a loop that only runs when a flash is actually found. No test
+clip contained one, so the line never executed. Every test exercised the
+*decision* to report and none exercised the *reporting*. Coverage of the happy
+path is not coverage.
+
+Fixed by extracting `flashed_graphic_findings()` as a function that can be
+called with constructed frames, and testing it directly — including that the
+finding survives `to_dict()`, since the report and JSON sidecar both go through
+it.
+
+**The crash is also evidence.** That code path only executes on a detection, so
+WestUrban contains something the detector recognised as a flashed graphic. The
+frames confirm the raw material was there: `t00130.500` through `t00139.500`
+were sampled, including `t00132.000`, squarely inside the 02:12-02:13 window
+the error was reported at.
+
+**Tested:** 336 tests passing (up from 333).

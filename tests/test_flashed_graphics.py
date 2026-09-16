@@ -124,3 +124,66 @@ class TestFlashedGraphics:
     def test_it_can_be_turned_off(self):
         cfg = TextConfig(detect_flashed_graphics=False)
         assert cfg.detect_flashed_graphics is False
+
+
+class TestReportingTheFinding:
+    """The first version built its findings inline in `detect`, referencing a
+    list that was created later in the function. Because the loop only runs
+    when something is actually found, every test passed and the code crashed on
+    the first real detection — taking the whole text detector down with it, so
+    spell-checking was skipped too. These tests exercise the reporting path,
+    not just the decision to report.
+    """
+
+    def _findings(self, frames, cfg=None):
+        from burninghouse_qc.detectors.text import (
+            build_text_runs,
+            flashed_graphic_findings,
+        )
+
+        cfg = cfg or TextConfig()
+        return flashed_graphic_findings(frames, build_text_runs(frames, cfg), cfg)
+
+    def test_a_finding_is_actually_built(self):
+        frames = [
+            frame(132.0, "PRODUCT", "LAUNCH", "2026"),
+            frame(133.5),
+            frame(138.0, "PRODUCT", "LAUNCH", "2026"),
+            frame(139.5, "PRODUCT", "LAUNCH", "2026"),
+        ]
+        findings = self._findings(frames)
+
+        assert len(findings) == 1
+        finding = findings[0]
+        assert finding.kind == "flashed_graphic"
+        assert finding.start == 132.0
+
+    def test_the_message_names_both_moments(self):
+        """What the operator needs is where to look, twice."""
+        frames = [
+            frame(132.0, "PRODUCT", "LAUNCH"),
+            frame(133.5),
+            frame(138.0, "PRODUCT", "LAUNCH"),
+            frame(139.5, "PRODUCT", "LAUNCH"),
+        ]
+        message = self._findings(frames)[0].message
+        assert "00:02:12.00" in message
+        assert "00:02:18.00" in message
+
+
+def test_the_whole_finding_survives_serialisation():
+    """The report and the JSON sidecar both go through to_dict."""
+    from burninghouse_qc.detectors.text import build_text_runs, flashed_graphic_findings
+
+    cfg = TextConfig()
+    frames = [
+        frame(132.0, "PRODUCT", "LAUNCH"),
+        frame(133.5),
+        frame(138.0, "PRODUCT", "LAUNCH"),
+        frame(139.5, "PRODUCT", "LAUNCH"),
+    ]
+    finding = flashed_graphic_findings(frames, build_text_runs(frames, cfg), cfg)[0]
+    data = finding.to_dict()
+    assert data["kind"] == "flashed_graphic"
+    assert data["severity"] == "review"
+    assert data["detail"]["proper_appearance"] == "00:02:18.00"

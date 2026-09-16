@@ -421,6 +421,44 @@ def find_flashed_graphics(
     return flashes
 
 
+def flashed_graphic_findings(
+    frames: list[SampledFrame], runs: list[TextRun], cfg: TextConfig
+) -> list[Finding]:
+    """Turn flashed-graphic pairs into findings.
+
+    Separate from `detect` so it can be exercised without rendering video —
+    the first version of this built its findings inline, and because the loop
+    only runs when something is actually found, every test passed while the
+    code crashed on the first real detection.
+    """
+    findings: list[Finding] = []
+    for brief, proper in find_flashed_graphics(runs, cfg):
+        shown = ", ".join(sorted(brief.words & proper.words)[:5])
+        findings.append(
+            Finding(
+                detector="text",
+                kind="flashed_graphic",
+                severity=Severity.REVIEW,
+                message=(
+                    f"A graphic appears briefly at {format_timecode(brief.start)}, "
+                    f"then again properly at {format_timecode(proper.start)} — "
+                    f"looks like it was flashed on at the wrong moment."
+                ),
+                start=brief.start,
+                end=brief.end,
+                confidence=0.6,
+                detail={
+                    "text": shown,
+                    "proper_appearance": format_timecode(proper.start),
+                    "brief_frames": brief.frames,
+                    "proper_frames": proper.frames,
+                },
+                thumbnail=_first_frame_path(frames, brief.start),
+            )
+        )
+    return findings
+
+
 def classify(suspect: SuspectWord, cfg: TextConfig) -> tuple[Severity, str]:
     confident_read = suspect.best_confidence >= cfg.fail_confidence
     repeated = suspect.occurrences >= cfg.fail_min_occurrences
@@ -523,35 +561,13 @@ def detect(
     stats["words_read"] = sum(len(f.words) for f in frames)
     stats["sample_interval"] = round(effective_interval(duration, cfg), 3)
 
+    findings: list[Finding] = []
+
     if cfg.detect_flashed_graphics:
         runs = build_text_runs(frames, cfg)
         stats["text_runs"] = len(runs)
-        for brief, proper in find_flashed_graphics(runs, cfg):
-            shown = ", ".join(sorted(brief.words & proper.words)[:5])
-            findings.append(
-                Finding(
-                    detector="text",
-                    kind="flashed_graphic",
-                    severity=Severity.REVIEW,
-                    message=(
-                        f"A graphic appears briefly at {format_timecode(brief.start)}, "
-                        f"then again properly at {format_timecode(proper.start)} — "
-                        f"looks like it was flashed on at the wrong moment."
-                    ),
-                    start=brief.start,
-                    end=brief.end,
-                    confidence=0.6,
-                    detail={
-                        "text": shown,
-                        "proper_appearance": format_timecode(proper.start),
-                        "brief_frames": brief.frames,
-                        "proper_frames": proper.frames,
-                    },
-                    thumbnail=_first_frame_path(frames, brief.start),
-                )
-            )
+        findings.extend(flashed_graphic_findings(frames, runs, cfg))
 
-    findings: list[Finding] = []
     for suspect in collect_suspects(frames, speller, cfg):
         severity, message = classify(suspect, cfg)
         thumbnail = annotate_thumbnail(suspect, workdir / "thumbnails")
