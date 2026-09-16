@@ -5,7 +5,9 @@ it is in, and what is genuinely unresolved. Written to be handed to a fresh
 conversation with no other context.
 
 **Repo:** `camcameronhales/BurninghouseQC`
-**Branch:** `claude/video-qc-app-spec-radpoh` (all work; `main` is empty)
+**Branches:** there is no `main` — every branch is a feature branch and the
+newest is the current state. `git branch -r` is the authority on that, not this
+line.
 **Status:** deployed and running on two machines. Detection for spelling, black
 frames and audio dropouts is working and evidenced. Detection for mis-timed
 graphics is new, and **not yet verified against the real case it was built for.**
@@ -20,7 +22,7 @@ renamed or altered.
 
 | Check | Method | Fails when | Notes |
 | --- | --- | --- | --- |
-| On-screen spelling | frame sampling → Tesseract OCR → spell-check | confidently read (≥85%) in 2+ frames and not a word | four layers of false-positive control, see §4 |
+| On-screen spelling | frame sampling → Tesseract OCR → spell-check | confidently read (≥85%) in 2+ frames and not a word | several layers of false-positive control, see §4 |
 | Black frames | FFmpeg `blackdetect` | ≥0.5s mid-programme | head/tail fades are `info` only |
 | Audio dropout | FFmpeg `silencedetect` | ≥3s mid-programme, or a silent file | head/tail handles are `info` only |
 | Mis-timed graphic | text timeline over sampled frames | — always `review` | **unverified, see §5** |
@@ -72,7 +74,14 @@ missed by the original build and is still not confirmed caught.
 
 ## 4. False-positive controls (all in `[spelling]` / `[text]`)
 
-Added in response to real failures, in order:
+A word passes six gates before it can fail a file, in this order: OCR
+confidence (`min_confidence = 70`), word shape (length, digits, short ALL-CAPS
+acronyms, roman numerals, case), proper nouns, the word lists, repetition, and
+then a higher confidence bar to fail rather than route to review
+(`fail_confidence = 85`, `fail_min_occurrences = 2`).
+
+Four of those were added in response to real failures rather than designed in,
+and those are the ones worth knowing about:
 
 1. **British/Australian spellings** — `variants.py` transforms a suspect word to
    its US form and re-checks, so `colour` passes while `coulour` still fails.
@@ -159,7 +168,7 @@ lower-third region rather than OCR.
 
 ## 7. A lesson worth carrying forward
 
-The crash in §5 passed 333 tests. The buggy line sat inside a loop that only
+The crash in §5 passed the entire suite — 333 tests at the time. The buggy line sat inside a loop that only
 runs when the detector finds something, and no test fixture contained a flash —
 so every test exercised the *decision* to report and none exercised the
 *reporting*. When adding a detector, test the finding it produces, not only the
@@ -175,7 +184,8 @@ timestamp bug. Do not re-investigate it without a trustworthy reference.
 ```
 burninghouse_qc/
   cli.py            scan / run / watch / init / status / doctor /
-                    check-access / forget / install-service / update
+                    check-access / forget / install-service /
+                    uninstall-service / update
   config.py         every tunable, loaded from config.toml
   watcher.py        watchdog → queue → single worker
   stability.py      deciding when a render has finished writing
@@ -201,14 +211,22 @@ burninghouse_qc/
   power.py          caffeinate while a job runs
 docs/
   local-trial.md    the install and running protocol   ← start here
+  service-setup.md  installing it as a launchd agent
   tuning.md         what to change when
   session-log.md    the full build diary
   server-safety.md  } dormant — kept for a possible future
   readonly-account.md }
+scripts/
+  make_sample.py    generates test footage with known faults
+  diagnose_frames.py  OCR the kept frames in a window (see §5)
+service/
+  com.burninghouse.qc.plist   the launchd agent
+tests/              the suite; see below
 ```
 
-336 tests. `pytest` runs them all; `pytest -m "not ffmpeg"` skips those needing
-FFmpeg and Tesseract installed.
+`pytest` runs the suite; `pytest -m "not ffmpeg"` skips the tests needing
+FFmpeg and Tesseract installed. The count is deliberately not written down
+here — it was wrong in this document twice before anyone noticed.
 
 ## 9. If picking this up as a skill
 

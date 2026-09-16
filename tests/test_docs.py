@@ -28,10 +28,21 @@ DOCS = ("README.md", "SPEC.md")
 # It is not a component, and a line for it in either map would be noise.
 EXCLUDED = {"__init__.py"}
 
-# Map entries are indented two or four spaces inside a fenced block:
-#   scan.py           one decode pass shared by black + scene detection
-#     black.py        blackdetect
+# Both maps are a fenced block of column-0 section headers — "burninghouse_qc/",
+# "docs/", "scripts/" — each followed by indented entries. Only the package
+# section lists modules, so the others (scripts/make_sample.py and friends) must
+# not be mistaken for them.
+SECTION = re.compile(r"^(\S.*/)\n((?:[ \t].*\n)*)", re.MULTILINE)
 MAP_ENTRY = re.compile(r"^ {2,4}(\w+\.py)", re.MULTILINE)
+DOC_ENTRY = re.compile(r"^ {2,4}([\w-]+\.md)", re.MULTILINE)
+
+
+def section_body(doc: str, header: str) -> str:
+    """The indented lines under a column-0 section header in the map."""
+    for found, body in SECTION.findall((REPO / doc).read_text()):
+        if found == header:
+            return body
+    return ""
 
 
 def package_modules() -> set[str]:
@@ -46,7 +57,7 @@ def package_modules() -> set[str]:
 
 
 def listed_modules(doc: str) -> set[str]:
-    return set(MAP_ENTRY.findall((REPO / doc).read_text())) - EXCLUDED
+    return set(MAP_ENTRY.findall(section_body(doc, "burninghouse_qc/"))) - EXCLUDED
 
 
 @pytest.mark.parametrize("doc", DOCS)
@@ -72,3 +83,26 @@ def test_the_two_maps_agree_with_each_other():
         f"the maps disagree — only in README: {sorted(readme - spec)}, "
         f"only in SPEC: {sorted(spec - readme)}"
     )
+
+
+def test_every_doc_appears_in_the_spec_map():
+    """SPEC §8 is the map a cold reader navigates by; a doc it omits is a doc
+    that does not exist as far as they are concerned. service-setup.md was
+    missing, which is the one covering how the thing actually runs."""
+    on_disk = {path.name for path in (REPO / "docs").glob("*.md")}
+    listed = set(DOC_ENTRY.findall(section_body("SPEC.md", "docs/")))
+    assert not on_disk - listed, f"SPEC.md's docs map omits {sorted(on_disk - listed)}"
+    assert not listed - on_disk, f"SPEC.md's docs map lists missing {sorted(listed - on_disk)}"
+
+
+def test_every_cli_subcommand_appears_in_the_spec_map():
+    """`uninstall` shipped and was documented nowhere."""
+    source = (REPO / "burninghouse_qc" / "cli.py").read_text()
+    subcommands = set(re.findall(r'add_parser\(\s*"([\w-]+)"', source))
+    # The cli.py entry runs across continuation lines until the next module.
+    entry = re.search(r"^  cli\.py(.*?)(?=^  \w+\.py)",
+                      section_body("SPEC.md", "burninghouse_qc/"),
+                      re.MULTILINE | re.DOTALL)
+    assert entry, "could not find the cli.py entry in SPEC.md's code map"
+    missing = {name for name in subcommands if name not in entry.group(1)}
+    assert not missing, f"SPEC.md's cli.py entry does not list {sorted(missing)}"

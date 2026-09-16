@@ -49,19 +49,26 @@ See [`docs/tuning.md`](docs/tuning.md) for how to adjust them during the pilot.
 
 ### Spelling: the false-positive problem
 
-OCR over graphics is the part most likely to cry wolf, so flags have to clear
-three gates before they can fail a file:
+OCR over graphics is the part most likely to cry wolf, so a word has to clear
+six gates, in this order, before it can fail a file:
 
 1. **OCR confidence** — anything Tesseract read below 70% is discarded outright.
-2. **Repetition** — a word has to appear in at least two sampled frames to fail.
-   A one-frame sighting can only ever route to *review*.
-3. **Word shape** — tokens with digits, short all-caps acronyms, roman numerals
+2. **Word shape** — tokens with digits, short all-caps acronyms, roman numerals
    and words under four letters are never checked. Nor are odd case shapes
    (`gOLOUR`, `PROFESSlONAL`), which are misread characters rather than
    misspellings.
-4. **Names** — a Title-case word beside another Title-case word is taken as a
+3. **Names** — a Title-case word beside another Title-case word is taken as a
    name in a lower third and skipped. A spell-checker cannot validate a
    surname, and flagging one would fire on every interview ever shot.
+4. **The word lists** — the bundled US English dictionary, your own
+   `custom_words.txt`, and British/Australian variants, any of which makes it
+   a real word.
+5. **Repetition** — what survives must appear in at least two sampled frames to
+   be reported at all. A one-frame sighting is a fragment caught mid-animation
+   more often than it is a typo.
+6. **Confidence again, to fail rather than review** — failing a file takes a
+   read of 85% or better in two or more frames. Anything less certain routes to
+   *review* instead.
 
 Fades to black and silent handles at the head and tail are recorded in the
 report as information, but do not affect the verdict — they are on nearly every
