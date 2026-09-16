@@ -1,8 +1,8 @@
 # Burninghouse QC
 
 Unattended QC for rendered video. Watches a folder, checks each new render for
-misspellings in on-screen graphics and for technical faults, writes a report,
-and sorts the file into **pass**, **review** or **error**.
+misspellings in on-screen graphics and for technical faults, and writes an HTML
+report beside it. The render itself is never moved, renamed or altered.
 
 Built to run as a launchd background service on a macOS edit machine — no UI,
 no server, nobody watching it. Each machine runs its own independent install
@@ -121,7 +121,7 @@ bhqc check-access  # proves the account is read-only on the renders share
 # Check one file without touching it — the fastest way to sanity-check settings
 bhqc scan /path/to/render.mov
 
-# Check one file and sort it into pass/review/error
+# Check one file and apply the configured routing (by default: report beside it)
 bhqc run /path/to/render.mov
 
 # Run the service: watch the input folder until stopped
@@ -229,7 +229,7 @@ burninghouse_qc/
   stability.py      deciding when a render has finished writing
   pipeline.py       runs the detectors, assembles the result
   findings.py       Finding, Severity and the pass/review/fail rule
-  router.py         moves the file and its report into the right folder
+  router.py         where the report goes; "alongside" is the default
   report.py         the self-contained HTML report
   spelling.py       dictionary + custom word list + OCR-aware filtering
   variants.py       British/Australian spelling tolerance
