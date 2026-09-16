@@ -277,7 +277,14 @@ probably want: silence means everything passed.
 keeps the code it started with. `git pull` updates the files on disk and
 changes nothing about what is running — no error, no warning, everything looks
 updated. `bhqc update` pulls and restarts in one step, so the two cannot come
-apart. If you ever do run `git pull` by hand, follow it with:
+apart.
+
+Restarting interrupts whatever file is being checked at that moment. `update`
+refuses to do that and tells you what is in progress; wait for it to finish, or
+`update --force` to interrupt anyway. An interrupted file is re-checked
+automatically on the next start — only the time is lost.
+
+If you ever do run `git pull` by hand, follow it with:
 
 ```bash
 launchctl kickstart -k gui/$(id -u)/com.burninghouse.qc

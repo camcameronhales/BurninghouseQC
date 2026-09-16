@@ -242,6 +242,33 @@ def _detector_crash(name: str, exc: Exception) -> Finding:
     )
 
 
+def cleanup_stale_workdirs(work_root: Path, older_than_seconds: float = 6 * 3600) -> int:
+    """Delete scratch directories left behind by jobs that never finished.
+
+    A job cleans up after itself, but one killed part-way — the machine
+    rebooted, the service was restarted mid-file — cannot. Those directories
+    hold extracted frames and sometimes a staged copy of the render, so left
+    alone they quietly consume gigabytes. A live job holds its directory for
+    minutes, so anything hours old can only be an orphan.
+    """
+    if not work_root.is_dir():
+        return 0
+    cutoff = time.time() - older_than_seconds
+    removed = 0
+    for entry in work_root.iterdir():
+        if not entry.is_dir():
+            continue
+        try:
+            if entry.stat().st_mtime >= cutoff:
+                continue
+        except OSError:
+            continue
+        shutil.rmtree(entry, ignore_errors=True)
+        if not entry.exists():
+            removed += 1
+    return removed
+
+
 def cleanup_workdir(workdir: Path | None, keep: bool = False) -> None:
     if keep or workdir is None or not workdir.exists():
         return

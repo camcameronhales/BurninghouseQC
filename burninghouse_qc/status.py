@@ -36,6 +36,39 @@ def setup_logging(log_file: Path, verbose: bool = False) -> logging.Logger:
     return logger
 
 
+def _pid_alive(pid: object) -> bool:
+    if not isinstance(pid, int):
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True             # alive, just not ours to signal
+    except OSError:
+        return False
+    return True
+
+
+def busy_with(status_path: Path) -> str | None:
+    """The file a live watcher is working on right now, if any.
+
+    Restarting the service mid-job throws that file's work away. It gets
+    re-checked on the next start, but the time is lost and any staged copy is
+    orphaned, so it is worth knowing before pulling the rug.
+    """
+    try:
+        state = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not _pid_alive(state.get("pid")):
+        return None
+    if state.get("state") not in ("processing", "waiting_for_write"):
+        return None
+    current = state.get("current_file")
+    return current if isinstance(current, str) else None
+
+
 def running_pid(status_path: Path) -> int | None:
     """The pid of a watcher that still appears to be alive, if any.
 
@@ -52,15 +85,7 @@ def running_pid(status_path: Path) -> int | None:
         return None
     if state.get("state") in (None, "stopped"):
         return None
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return None
-    except PermissionError:
-        return pid          # alive, just not ours to signal
-    except OSError:
-        return None
-    return pid
+    return pid if _pid_alive(pid) else None
 
 
 class StatusFile:

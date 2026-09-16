@@ -289,3 +289,63 @@ class TestNotifications:
         sent = self._capture(svc, monkeypatch)
         svc._notify_start(Path("/x/Spot.mov"))
         assert sent == []
+
+
+class TestInterruptedJobs:
+    """Restarting the service mid-file throws that file's work away. It is
+    re-checked on the next start, but the scratch it left cannot clean itself.
+    """
+
+    def test_a_busy_watcher_is_detected(self, tmp_path):
+        import json
+        import os
+
+        from burninghouse_qc.status import busy_with
+
+        status = tmp_path / "status.json"
+        status.write_text(
+            json.dumps({"pid": os.getpid(), "state": "processing",
+                        "current_file": "WestUrban.mp4"})
+        )
+        assert busy_with(status) == "WestUrban.mp4"
+
+    def test_a_watcher_waiting_for_a_write_also_counts_as_busy(self, tmp_path):
+        import json
+        import os
+
+        from burninghouse_qc.status import busy_with
+
+        status = tmp_path / "status.json"
+        status.write_text(
+            json.dumps({"pid": os.getpid(), "state": "waiting_for_write",
+                        "current_file": "WestUrban.mp4"})
+        )
+        assert busy_with(status) == "WestUrban.mp4"
+
+    def test_an_idle_watcher_is_not_busy(self, tmp_path):
+        import json
+        import os
+
+        from burninghouse_qc.status import busy_with
+
+        status = tmp_path / "status.json"
+        status.write_text(json.dumps({"pid": os.getpid(), "state": "idle",
+                                      "current_file": None}))
+        assert busy_with(status) is None
+
+    def test_a_dead_watcher_is_not_busy(self, tmp_path):
+        """A status file left saying "processing" by a crashed service must not
+        block an update forever."""
+        import json
+
+        from burninghouse_qc.status import busy_with
+
+        status = tmp_path / "status.json"
+        status.write_text(json.dumps({"pid": 999999, "state": "processing",
+                                      "current_file": "Stale.mp4"}))
+        assert busy_with(status) is None
+
+    def test_a_missing_status_file_is_not_busy(self, tmp_path):
+        from burninghouse_qc.status import busy_with
+
+        assert busy_with(tmp_path / "nope.json") is None

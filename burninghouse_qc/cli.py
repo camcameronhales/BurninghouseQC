@@ -24,6 +24,7 @@ from . import __version__
 from .access import Status, run_all
 from .config import Config
 from .ledger import Ledger
+from .status import busy_with
 from .findings import Verdict
 from .pipeline import cleanup_workdir, run_qc
 from .report import write_report
@@ -480,6 +481,16 @@ def cmd_update(args: argparse.Namespace) -> int:
 
     from . import service
 
+    cfg = _load(args)
+    busy = busy_with(cfg.paths.status_file)
+    if busy and not args.force:
+        print(f"\n  {busy} is being checked right now.")
+        print("  Restarting would throw that work away — it would be re-checked")
+        print("  from scratch on the next start, but the time is lost.\n")
+        print("  Run this again once it is finished, or interrupt it with:\n")
+        print("      bhqc -c <config> update --force\n")
+        return 1
+
     repo = Path(__file__).resolve().parent.parent
     if not (repo / ".git").exists():
         print(f"{repo} is not a git checkout — update it however you installed it.",
@@ -598,6 +609,8 @@ def build_parser() -> argparse.ArgumentParser:
     update = sub.add_parser(
         "update", help="Pull the latest code and restart the service (do this, not git pull)"
     )
+    update.add_argument("--force", action="store_true",
+                        help="Restart even if a file is being checked right now")
     update.set_defaults(func=cmd_update)
 
     uninstall = sub.add_parser(

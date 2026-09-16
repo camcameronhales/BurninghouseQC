@@ -22,7 +22,7 @@ from .config import Config
 from .ledger import Ledger
 from .mounts import device_for, should_poll
 from .notify import notify
-from .pipeline import cleanup_workdir, run_qc
+from .pipeline import cleanup_stale_workdirs, cleanup_workdir, run_qc
 from .power import keep_awake
 from .router import route
 from .stability import Stability, is_candidate, wait_until_stable
@@ -228,6 +228,12 @@ class QCService:
                 "or the background service with: launchctl bootout gui/$(id -u)/"
                 "com.burninghouse.qc",
                 other,
+            )
+
+        orphaned = cleanup_stale_workdirs(self.cfg.paths.work)
+        if orphaned:
+            self.logger.info(
+                "Cleared %d scratch folder(s) left by interrupted jobs.", orphaned
             )
 
         self.logger.info("Burninghouse QC watching %s", self.cfg.paths.input)

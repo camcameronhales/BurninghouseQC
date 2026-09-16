@@ -300,3 +300,45 @@ def test_the_report_does_not_mention_folders_that_do_not_exist(tmp_path):
     assert "No issues found." in text
     assert "pass folder" not in text
     assert "error folder" not in text
+
+
+class TestStaleScratch:
+    """A job cleans up after itself; one killed part-way cannot. Those
+    directories hold extracted frames and sometimes a staged copy of the
+    render, so left alone they quietly consume gigabytes."""
+
+    def test_an_old_orphan_is_removed(self, tmp_path):
+        from burninghouse_qc.pipeline import cleanup_stale_workdirs
+
+        orphan = tmp_path / "20260916-153855_WestUrban"
+        (orphan / "frames").mkdir(parents=True)
+        (orphan / "frames" / "f.png").write_bytes(b"x")
+        os.utime(orphan, (time.time() - 8 * 3600, time.time() - 8 * 3600))
+
+        assert cleanup_stale_workdirs(tmp_path) == 1
+        assert not orphan.exists()
+
+    def test_a_live_job_is_left_alone(self, tmp_path):
+        """A running job holds its directory for minutes — never hours."""
+        from burninghouse_qc.pipeline import cleanup_stale_workdirs
+
+        live = tmp_path / "20260916-160000_InFlight"
+        live.mkdir()
+
+        assert cleanup_stale_workdirs(tmp_path) == 0
+        assert live.exists()
+
+    def test_a_missing_work_folder_is_fine(self, tmp_path):
+        from burninghouse_qc.pipeline import cleanup_stale_workdirs
+
+        assert cleanup_stale_workdirs(tmp_path / "nope") == 0
+
+    def test_loose_files_are_not_touched(self, tmp_path):
+        from burninghouse_qc.pipeline import cleanup_stale_workdirs
+
+        loose = tmp_path / "notes.txt"
+        loose.write_text("x")
+        os.utime(loose, (time.time() - 8 * 3600, time.time() - 8 * 3600))
+
+        assert cleanup_stale_workdirs(tmp_path) == 0
+        assert loose.exists()

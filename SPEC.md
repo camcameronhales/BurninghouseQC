@@ -717,3 +717,31 @@ or silence them.
 **Tested:** 302 tests passing (up from 287), including that filenames
 containing quotes or backslashes cannot break the AppleScript, and that a
 missing or hung `osascript` is not fatal.
+
+### Session 16 — 2026-09-16
+
+`bhqc update` was run while a file was mid-QC, and the report never appeared.
+Cause: `update` ends in `launchctl kickstart -k`, which kills the running
+service — including whatever job it was part-way through. A fix for one silent
+failure introduced another.
+
+Two fixes:
+
+**`update` no longer interrupts a job silently.** It reads the status file
+first and refuses if a live watcher is mid-file, naming the file and explaining
+that the work would be thrown away. `--force` interrupts anyway. A stale status
+file left by a crashed service cannot block an update forever, because the
+check requires the recorded pid to still be alive.
+
+**Scratch left by interrupted jobs is now cleared at start-up.** A job cleans
+up after itself, but one killed part-way cannot — and those directories hold
+extracted frames and sometimes a staged copy of the render. Left alone they
+quietly consume gigabytes. A live job holds its directory for minutes, so
+anything over six hours old can only be an orphan.
+
+Worth recording that the pipeline recovered on its own: the ledger is only
+written after routing completes, so the interrupted file was never marked done
+and `enqueue_existing` picked it up again on restart. The design held; the
+tooling around it did not.
+
+**Tested:** 311 tests passing (up from 302).
