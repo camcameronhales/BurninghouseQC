@@ -21,6 +21,7 @@ from watchdog.observers.polling import PollingObserver
 from .config import Config
 from .ledger import Ledger
 from .mounts import device_for, should_poll
+from .notify import notify
 from .pipeline import cleanup_workdir, run_qc
 from .power import keep_awake
 from .router import route
@@ -164,6 +165,7 @@ class QCService:
 
             self.logger.info("QC started: %s", path.name)
             self.status.update(state="processing", current_file=path.name)
+            self._notify_start(path)
             # Hold the machine awake only while the job actually runs.
             awake = keep_awake(self.logger) if self.cfg.watcher.prevent_sleep else nullcontext()
             with awake:
@@ -187,6 +189,7 @@ class QCService:
             self.ledger.record(
                 outcome.destination, outcome.verdict.value, str(outcome.report)
             )
+            self._notify_finish(path, result, outcome)
             self.status.record_result(
                 filename=path.name,
                 verdict=outcome.verdict.value,
@@ -253,6 +256,39 @@ class QCService:
             observer.join(timeout=5)
             worker.join(timeout=5)
             self.status.update(state="stopped", current_file=None)
+
+    # -- notifications ----------------------------------------------------
+    def _notify_start(self, path: Path) -> None:
+        cfg = self.cfg.notifications
+        if not (cfg.enabled and cfg.on_start):
+            return
+        notify("Burninghouse QC", f"Checking {path.name}…", logger=self.logger)
+
+    def _notify_finish(self, path: Path, result, outcome) -> None:
+        cfg = self.cfg.notifications
+        if not (cfg.enabled and cfg.on_finish):
+            return
+        counts = result.counts()
+        flagged = counts["fail"] or counts["review"]
+        if cfg.only_when_flagged and not flagged:
+            return
+
+        verdict = outcome.verdict.value.upper()
+        if flagged:
+            parts = []
+            if counts["fail"]:
+                parts.append(f"{counts['fail']} fail")
+            if counts["review"]:
+                parts.append(f"{counts['review']} to review")
+            summary = ", ".join(parts)
+        else:
+            summary = "no issues"
+        notify(
+            f"QC {verdict} — {path.name}",
+            f"{summary} · {result.elapsed:.0f}s",
+            sound=cfg.sound or None,
+            logger=self.logger,
+        )
 
     def _build_observer(self):
         """FSEvents where it works, polling where it does not.

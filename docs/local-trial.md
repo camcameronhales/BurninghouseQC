@@ -239,6 +239,28 @@ your config, your folders — and prints the command to start it. Then run the
 From then on it runs in the background, starts itself at login, and restarts if
 it ever crashes. No Terminal window needed.
 
+### Notifications
+
+While the service runs you get a desktop banner as each file starts and again
+when it finishes with its verdict — so an unattended run is not invisible.
+
+```toml
+[notifications]
+enabled           = true
+on_start          = true    # "Checking Spot.mov…"
+on_finish         = true    # "QC PASS — Spot.mov · no issues · 34s"
+only_when_flagged = false   # true = stay quiet unless something was flagged
+sound             = ""      # e.g. "Submarine" for an alert sound
+```
+
+**The first banner appears under "Script Editor"** in System Settings →
+Notifications, because that is what macOS attributes `osascript` to. That is
+where to allow them through a Focus mode, or turn them off at the system level.
+If no banner appears at all, check there first.
+
+Once the novelty wears off, `only_when_flagged = true` is the setting you
+probably want: silence means everything passed.
+
 ### Running protocol
 
 | | |

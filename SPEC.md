@@ -689,3 +689,31 @@ crying wolf on every file to silence on every file, but **no run so far has
 contained a real error**. The synthetic clip proves the detectors work; a real
 deliverable with a known mistake in it is the test that has not happened, and
 until it does the false-negative rate is unmeasured.
+
+### Session 15 — 2026-09-16
+
+Second install is up on the main suite and picking up files correctly.
+
+**Added desktop notifications.** An unattended background service is invisible
+by design, which meant the only way to know it was working was to go and read
+the log — the question that prompted this was literally "is anything
+happening?". Now a banner when a file starts, and another with the verdict when
+it finishes.
+
+Uses `osascript`, which every Mac has, so no new dependency. It works from the
+LaunchAgent because that runs inside the logged-in GUI session (it would not
+from a LaunchDaemon, which has no session to post into). Every failure path is
+swallowed — a notification must never be able to affect QC.
+
+`only_when_flagged` is off by default so the first days are visibly alive; it
+is the setting to turn on once the novelty wears off, at which point silence
+means everything passed.
+
+One macOS quirk documented rather than worked around: the first banner posts
+under "Script Editor" in System Settings > Notifications, because that is what
+macOS attributes osascript to. That is where to allow them through a Focus mode
+or silence them.
+
+**Tested:** 302 tests passing (up from 287), including that filenames
+containing quotes or backslashes cannot break the AppleScript, and that a
+missing or hung `osascript` is not fatal.

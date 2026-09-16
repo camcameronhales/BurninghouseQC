@@ -172,3 +172,120 @@ class TestConcurrentWatchers:
         from burninghouse_qc.status import running_pid
 
         assert running_pid(tmp_path / "nope.json") is None
+
+
+class TestNotifications:
+    """What the service actually posts as it works."""
+
+    def _service_with(self, tmp_path, **notification_settings):
+        from burninghouse_qc.config import Config
+        from burninghouse_qc.watcher import QCService
+
+        cfg = Config()
+        cfg.paths.root = tmp_path
+        cfg.paths.input = tmp_path / "input"
+        cfg.paths.work = tmp_path / "work"
+        cfg.paths.status_file = tmp_path / "status.json"
+        cfg.paths.log_file = tmp_path / "qc.log"
+        cfg.paths.ledger_file = tmp_path / "processed.json"
+        for key, value in notification_settings.items():
+            setattr(cfg.notifications, key, value)
+        cfg.ensure_paths()
+        svc = QCService(cfg)
+        svc.logger = FakeLogger()
+        return svc
+
+    def _capture(self, svc, monkeypatch):
+        sent: list[tuple[str, str]] = []
+        import burninghouse_qc.watcher as watcher_module
+
+        monkeypatch.setattr(
+            watcher_module,
+            "notify",
+            lambda title, message, sound=None, logger=None: sent.append((title, message)),
+        )
+        return sent
+
+    def _result(self, fails=0, reviews=0):
+        from datetime import datetime, timezone
+
+        from burninghouse_qc.findings import Finding, Severity, verdict_for
+        from burninghouse_qc.pipeline import QCResult
+
+        findings = [
+            Finding(detector="t", kind="k", severity=Severity.FAIL, message="m")
+            for _ in range(fails)
+        ] + [
+            Finding(detector="t", kind="k", severity=Severity.REVIEW, message="m")
+            for _ in range(reviews)
+        ]
+        now = datetime.now(timezone.utc)
+        return QCResult(
+            source=Path("/x/Spot.mov"),
+            verdict=verdict_for(findings),
+            findings=findings,
+            media=None,
+            started_at=now,
+            finished_at=now,
+        )
+
+    def test_a_start_banner_says_a_long_job_is_alive(self, tmp_path, monkeypatch):
+        svc = self._service_with(tmp_path)
+        sent = self._capture(svc, monkeypatch)
+        svc._notify_start(Path("/x/Spot.mov"))
+        assert sent and "Spot.mov" in sent[0][1]
+
+    def test_the_finish_banner_carries_the_verdict_and_counts(self, tmp_path, monkeypatch):
+        from burninghouse_qc.router import RouteOutcome
+
+        svc = self._service_with(tmp_path)
+        sent = self._capture(svc, monkeypatch)
+        result = self._result(fails=2, reviews=1)
+        outcome = RouteOutcome(
+            verdict=result.verdict,
+            destination=Path("/x/Spot.mov"),
+            report=Path("/x/Spot.qc.html"),
+            action="left_in_place",
+        )
+        svc._notify_finish(Path("/x/Spot.mov"), result, outcome)
+
+        title, message = sent[0]
+        assert "FAIL" in title and "Spot.mov" in title
+        assert "2 fail" in message and "1 to review" in message
+
+    def test_a_clean_file_says_no_issues(self, tmp_path, monkeypatch):
+        from burninghouse_qc.router import RouteOutcome
+
+        svc = self._service_with(tmp_path)
+        sent = self._capture(svc, monkeypatch)
+        result = self._result()
+        outcome = RouteOutcome(
+            verdict=result.verdict,
+            destination=Path("/x/Spot.mov"),
+            report=Path("/x/Spot.qc.html"),
+            action="left_in_place",
+        )
+        svc._notify_finish(Path("/x/Spot.mov"), result, outcome)
+        assert "PASS" in sent[0][0]
+        assert "no issues" in sent[0][1]
+
+    def test_only_when_flagged_stays_quiet_on_a_pass(self, tmp_path, monkeypatch):
+        from burninghouse_qc.router import RouteOutcome
+
+        svc = self._service_with(tmp_path, only_when_flagged=True)
+        sent = self._capture(svc, monkeypatch)
+        result = self._result()
+        outcome = RouteOutcome(
+            verdict=result.verdict,
+            destination=Path("/x/Spot.mov"),
+            report=Path("/x/Spot.qc.html"),
+            action="left_in_place",
+        )
+        svc._notify_finish(Path("/x/Spot.mov"), result, outcome)
+        assert sent == []
+
+    def test_disabling_silences_both_ends(self, tmp_path, monkeypatch):
+        svc = self._service_with(tmp_path, enabled=False)
+        sent = self._capture(svc, monkeypatch)
+        svc._notify_start(Path("/x/Spot.mov"))
+        assert sent == []

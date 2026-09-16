@@ -181,6 +181,14 @@ never-overwrite rule that suffixes `name (1)` for reports as well as renders,
 and a rewrite check — if the file changed while QC was running, it's left alone
 and the report says so.
 
+### Notifications
+
+A desktop banner as each file starts and again when it finishes with its
+verdict, so an unattended run is not invisible. macOS only; set
+`notifications.only_when_flagged = true` once you would rather only hear about
+problems. The first banner appears under "Script Editor" in System Settings →
+Notifications, which is where to allow or silence them.
+
 ### On a Mac specifically
 
 - **Network shares.** FSEvents doesn't fire for SMB or AFP mounts, so a render

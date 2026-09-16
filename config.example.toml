@@ -158,6 +158,26 @@ work_from_local_copy = true
 max_local_copy_gb    = 25.0        # larger than this, read in place
 
 
+[notifications]
+# Desktop banners while the service runs unattended. macOS only.
+#
+# The first banner posts under "Script Editor" in System Settings >
+# Notifications — that is where to silence them, or let them through a Focus
+# mode. Notifications work from the background service because a LaunchAgent
+# runs inside your logged-in session.
+enabled = true
+
+on_start  = true                   # "Checking Spot.mov…" when a file starts
+on_finish = true                   # "QC PASS — Spot.mov · no issues · 34s"
+
+# With this on, a finished file only notifies when something was flagged, so
+# silence means everything passed.
+only_when_flagged = false
+
+# An alert sound, e.g. "Submarine", "Glass", "Ping". Empty for silent.
+sound = ""
+
+
 [report]
 thumbnail_width = 480
 max_thumbnails  = 60

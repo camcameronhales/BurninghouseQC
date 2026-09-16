@@ -177,6 +177,27 @@ class SpellingConfig:
 
 
 @dataclass
+class NotificationConfig:
+    """Desktop notifications while the service runs unattended.
+
+    macOS only; ignored elsewhere. The first one posts under "Script Editor"
+    in System Settings > Notifications, which is where to go to silence them
+    or allow them through a Focus mode.
+    """
+
+    enabled: bool = True
+    # A banner when a file starts being checked, so a long job is visibly alive.
+    on_start: bool = True
+    # A banner with the verdict when it finishes.
+    on_finish: bool = True
+    # With this on, a finished file only notifies when something was flagged —
+    # silence means everything passed.
+    only_when_flagged: bool = False
+    # An alert sound name, e.g. "Submarine" or "Glass". Empty for silent.
+    sound: str = ""
+
+
+@dataclass
 class RoutingConfig:
     """What the app does with the render and where the report goes.
 
@@ -229,6 +250,7 @@ class Config:
     text: TextConfig = field(default_factory=TextConfig)
     spelling: SpellingConfig = field(default_factory=SpellingConfig)
     routing: RoutingConfig = field(default_factory=RoutingConfig)
+    notifications: NotificationConfig = field(default_factory=NotificationConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
     source_path: Path | None = None
 
