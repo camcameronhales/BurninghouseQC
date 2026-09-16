@@ -461,6 +461,13 @@ def cmd_install_service(args: argparse.Namespace) -> int:
     print(f"      bhqc -c {config_path} status")
     print(f"      tail -f {cfg.paths.log_file}\n")
     print("  " + "-" * 68)
+    print("  Make `bhqc` work from anywhere (optional, but saves typing)")
+    print("  " + "-" * 68)
+    print(f"      echo 'alias bhqc=\"{sys.executable.rsplit('/', 1)[0]}/bhqc "
+          f"-c {config_path}\"' >> ~/.zshrc\n")
+    print("  Then open a new Terminal window and `bhqc status`, `bhqc update`")
+    print("  and the rest work with no paths at all.\n")
+    print("  " + "-" * 68)
     print("  IMPORTANT — updating from here on")
     print("  " + "-" * 68)
     print("  The service keeps the code it started with, so `git pull` alone")

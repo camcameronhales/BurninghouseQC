@@ -239,6 +239,19 @@ your config, your folders — and prints the command to start it. Then run the
 From then on it runs in the background, starts itself at login, and restarts if
 it ever crashes. No Terminal window needed.
 
+### Make `bhqc` work from anywhere
+
+`bhqc` lives inside the virtual environment, so it is not on your `PATH` and
+every command needs two long paths. One line fixes that for good:
+
+```bash
+echo 'alias bhqc="/Users/Shared/BurninghouseQC/.venv/bin/bhqc -c /Users/Shared/BurninghouseQC/config.toml"' >> ~/.zshrc
+```
+
+Open a new Terminal window, and `bhqc status`, `bhqc update`, `bhqc doctor` and
+the rest all work from any folder with no paths at all. Every `bhqc …` command
+in this document can then be typed exactly as written.
+
 ### Notifications
 
 While the service runs you get a desktop banner as each file starts and again
@@ -384,9 +397,9 @@ Exit codes: `0` pass, `10` review, `20` fail — handy if you ever script it.
 Homebrew's: `rm -rf .venv && brew install python@3.13 && /opt/homebrew/bin/python3.13 -m venv .venv`,
 then upgrade pip and reinstall as in step 2.
 
-**"command not found: bhqc"** — use the full path,
-`/Users/Shared/BurninghouseQC/.venv/bin/bhqc`, or activate the venv first with
-`source .venv/bin/activate`.
+**"command not found: bhqc"** — it lives in the venv, not on your `PATH`. Use
+the full path `/Users/Shared/BurninghouseQC/.venv/bin/bhqc`, or set up the
+alias above once and stop thinking about it.
 
 **Tesseract "not usable" in doctor** — Homebrew isn't on PATH. Reopen Terminal,
 or run `eval "$(/opt/homebrew/bin/brew shellenv)"`.
