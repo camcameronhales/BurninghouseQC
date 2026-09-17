@@ -185,13 +185,14 @@ def main() -> int:
     # The runs the flashed-graphic detector would build from these frames.
     runs = build_text_runs(frames, cfg)
     print("=" * 72)
-    print(f"TEXT RUNS ({len(runs)})   — span is what a 'under 2 seconds' rule needs")
+    print(f"TEXT RUNS ({len(runs)})   — 'occupied' is the unbroken stretch of text this run sits in")
     print("=" * 72)
     merged = []
     for index, run in enumerate(runs):
-        brief = "BRIEF" if run.span <= cfg.flash_max_span else "     "
+        brief = "BRIEF" if run.presence_span <= cfg.flash_max_span else "     "
         print(f"  [{index}] {brief} {format_timecode(run.start)} -> {format_timecode(run.end)}  "
-              f"span={run.span:5.2f}s  frames={run.frames}")
+              f"span={run.span:5.2f}s  frames={run.frames}  "
+              f"occupied={run.presence_span:5.2f}s")
         print(f"        words: {', '.join(sorted(run.words)) or '(none)'}")
         # A run only ends when a frame with no text is sampled. If the frames
         # inside this run are further apart than the sampling interval, two
@@ -214,7 +215,7 @@ def main() -> int:
               f"overlap={_overlap(brief.words, proper.words):.2f}")
     if not flashes:
         # Say *why* it stayed silent: the near-misses are the useful part.
-        briefs = [r for r in runs if r.span <= cfg.flash_max_span]
+        briefs = [r for r in runs if r.presence_span <= cfg.flash_max_span]
         print(f"  no pair. {len(briefs)} run(s) were brief enough to qualify.")
         for brief in briefs:
             candidates = [

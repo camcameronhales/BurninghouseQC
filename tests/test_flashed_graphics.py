@@ -264,3 +264,85 @@ class TestBriefIsMeasuredInSeconds:
         assert len(findings) == 1
         assert findings[0].detail["brief_span"] == 0.0
         assert findings[0].detail["proper_span"] == 3.0
+
+
+class TestOccupiedStretches:
+    """The WestUrban end card, as the diagnostic actually found it.
+
+    The card is one graphic that changes its own text: a line of copy until
+    02:17.20, then the URL alone until past 02:21. Those share no words, so
+    they are two runs, and each is under two seconds on the 1.5s grid — which
+    made both look brief. A hallucinated "jail" off a busy frame at 02:15 was a
+    third. Only the appearance at 02:12 is actually a flash.
+    """
+
+    def westurban_frames(self):
+        return [
+            frame(129.0), frame(130.5),
+            frame(132.0, "fall", "prevention", "visit", "information"),   # the flash
+            frame(133.5), frame(134.24),
+            frame(135.0, "jail"), frame(135.72, "jail"),                  # OCR noise
+            frame(136.5, "fall", "prevention", "visit", "information"),   # the card
+            frame(137.2, "fall", "prevention", "visit", "information"),
+            frame(138.0, "worksafe.vic.gov.au"),                          # …still up
+            frame(139.5, "worksafe.vic.gov.au"),
+            frame(141.0, "worksafe.vic.gov.au"),
+        ]
+
+    def test_the_card_is_one_occupied_stretch(self):
+        runs = build_text_runs(self.westurban_frames(), TextConfig())
+        # Still separate runs — the words genuinely differ — but every run from
+        # 135.0 onward knows it sits in one unbroken six seconds of occupancy.
+        assert [round(run.span, 2) for run in runs] == [0.0, 0.72, 0.7, 3.0]
+        assert [round(run.presence_span, 2) for run in runs] == [0.0, 6.0, 6.0, 6.0]
+
+    def test_only_the_flash_counts_as_brief(self):
+        cfg = TextConfig()
+        runs = build_text_runs(self.westurban_frames(), cfg)
+        brief = [run for run in runs if run.presence_span <= cfg.flash_max_span]
+        assert [run.start for run in brief] == [132.0]
+
+    def test_the_flash_is_still_caught(self):
+        cfg = TextConfig()
+        flashes = find_flashed_graphics(build_text_runs(self.westurban_frames(), cfg), cfg)
+        assert len(flashes) == 1
+        assert flashes[0][0].start == 132.0
+        assert flashes[0][1].start == 136.5
+
+    def test_text_returning_inside_one_occupied_stretch_is_not_a_flash(self):
+        """The case the occupied stretch actually decides.
+
+        A card shows one line, swaps to another, then brings the first back and
+        holds it — and the frame is never empty in between. By words alone that
+        is "brief, then properly", and the pairing fires. But nothing was
+        flashed on and pulled: the graphic area was occupied throughout, and
+        what changed was the card's own content.
+        """
+        frames = [
+            frame(10.0, "fall", "prevention"),
+            frame(11.5, "worksafe.vic.gov.au"),
+            frame(13.0, "worksafe.vic.gov.au"),
+            frame(14.5, "fall", "prevention"),
+            frame(16.0, "fall", "prevention"),
+            frame(17.5, "fall", "prevention"),
+        ]
+        cfg = TextConfig()
+        runs = build_text_runs(frames, cfg)
+        assert runs[0].span == 0.0, "by its own words the first run looks brief"
+        assert runs[0].presence_span == 7.5, "but the frame was never clear"
+        assert find_flashed_graphics(runs, cfg) == []
+
+    def test_the_same_shape_with_a_clear_frame_is_a_flash(self):
+        """The contrast: one empty frame and it is a flash again.
+
+        The graphic really did go away and come back, which is the defect.
+        """
+        frames = [
+            frame(10.0, "fall", "prevention"),
+            frame(11.5),
+            frame(14.5, "fall", "prevention"),
+            frame(16.0, "fall", "prevention"),
+        ]
+        cfg = TextConfig()
+        flashes = find_flashed_graphics(build_text_runs(frames, cfg), cfg)
+        assert [(f[0].start, f[1].start) for f in flashes] == [(10.0, 14.5)]

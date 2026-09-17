@@ -47,10 +47,21 @@ class TextRun:
     start: float
     end: float
     frames: int
+    # The unbroken stretch of frames with *any* text that this run sits inside.
+    # A card whose text changes while it stays up — a sentence replaced by a
+    # URL, say — is several runs but one occupied stretch, and how long the
+    # frame was occupied is the honest answer to "how long was that graphic on
+    # screen". Set by `build_text_runs`; zero on a run built by hand.
+    presence_start: float = 0.0
+    presence_end: float = 0.0
 
     @property
     def span(self) -> float:
         return self.end - self.start
+
+    @property
+    def presence_span(self) -> float:
+        return self.presence_end - self.presence_start
 
 
 @dataclass
@@ -404,13 +415,31 @@ def _overlap(a: frozenset[str], b: frozenset[str]) -> float:
 
 
 def build_text_runs(frames: list[SampledFrame], cfg: TextConfig) -> list[TextRun]:
-    """Collapse consecutive frames showing the same text into runs."""
+    """Collapse consecutive frames showing the same text into runs.
+
+    Runs that are not separated by a frame with no text at all belong to one
+    *occupied stretch*, and every run in it records that stretch's bounds. Two
+    runs sit in one stretch when the text changed but something stayed on
+    screen — which is what a card animating from a line of copy to a URL looks
+    like, and is indistinguishable from two graphics by their words alone.
+    """
     runs: list[TextRun] = []
     current: TextRun | None = None
+    occupied: list[TextRun] = []
+
+    def close_occupied() -> None:
+        if not occupied:
+            return
+        start, end = occupied[0].start, occupied[-1].end
+        for run in occupied:
+            run.presence_start, run.presence_end = start, end
+        occupied.clear()
+
     for frame in frames:
         signature = frame_signature(frame, cfg)
         if not signature:
             current = None
+            close_occupied()
             continue
         if current is not None and _overlap(current.words, signature) >= cfg.run_match:
             current.words = current.words | signature
@@ -419,6 +448,8 @@ def build_text_runs(frames: list[SampledFrame], cfg: TextConfig) -> list[TextRun
         else:
             current = TextRun(signature, frame.timestamp, frame.timestamp, 1)
             runs.append(current)
+            occupied.append(current)
+    close_occupied()
     return runs
 
 
@@ -434,10 +465,12 @@ def find_flashed_graphics(
     """
     flashes: list[tuple[TextRun, TextRun]] = []
     for index, brief in enumerate(runs):
-        # Measured seconds, not a frame count. How many frames a graphic lands
-        # on depends on where the sampling grid happens to fall; how long it was
-        # on screen is the thing that makes it a mistake.
-        if brief.span > cfg.flash_max_span:
+        # Measured seconds, not a frame count: how many frames a graphic lands
+        # on depends on where the sampling grid falls, while how long it was up
+        # is the thing that makes it a mistake. Measured over the whole occupied
+        # stretch, so a card that changes its own text midway is not mistaken
+        # for two brief graphics.
+        if brief.presence_span > cfg.flash_max_span:
             continue
         for other in runs[index + 1:]:
             if other.frames < cfg.flash_min_proper_frames:
