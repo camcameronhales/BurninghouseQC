@@ -25,7 +25,7 @@ renamed or altered.
 | On-screen spelling | frame sampling → Tesseract OCR → spell-check | confidently read (≥85%) in 2+ frames and not a word | several layers of false-positive control, see §4 |
 | Black frames | FFmpeg `blackdetect` | ≥0.5s mid-programme | head/tail fades are `info` only |
 | Audio dropout | FFmpeg `silencedetect` | ≥3s mid-programme, or a silent file | head/tail handles are `info` only |
-| Mis-timed graphic | text timeline over sampled frames | — always `review` | confirmed on the real case, see §5 |
+| Mis-timed graphic | text timeline over sampled frames, then a denser second pass over each candidate | — always `review` | confirmed on the real case, see §5 |
 | Unreadable file | `ffprobe` | cannot open, or zero duration | |
 
 Verdicts are **pass / review / fail**, stated in the report. Every file gets a
@@ -158,11 +158,13 @@ lower-third region rather than OCR.
 
 ## 6. Known issues
 
-- **A brief graphic cannot be timed on the sampling grid.** `flash_max_span`
-  is measured in seconds, but the baseline grid is 1.5s, so a single-sample
-  appearance is only bounded as "under about 3 seconds" — 0.3s and 1.4s are
-  indistinguishable. Flagging graphics under 2 seconds *as such* needs denser
-  sampling in the window around a candidate, which is not built.
+- **Brief graphics are timed by a second pass, which is unproven on real
+  footage.** The baseline grid cannot resolve below its own 1.5s interval, so
+  once a brief appearance is found the detector re-samples around it at
+  `flash_refine_interval` (0.25s) to find its real edges. Bounded by
+  `flash_refine_max`, and costing frames per candidate rather than per job.
+  It is covered by tests against a stubbed decoder, and has not yet run against
+  a real deliverable — the WestUrban frames predate it.
 - **Custom dictionary does not sync** between the two machines. Hand-copied;
   currently unedited (20 shipped entries) on both.
 - **`ProcessType` fix may not be applied.** The launchd agent originally

@@ -140,6 +140,15 @@ class TextConfig:
     flash_min_proper_frames: int = 2
     # Word overlap needed to call the brief and proper appearances the same graphic.
     flash_match: float = 0.6
+    # Once a brief appearance is found on the baseline grid, re-sample around it
+    # this often to find its real edges. The grid cannot resolve below its own
+    # interval, so without this a "brief" graphic is only bounded as "shorter
+    # than about two sample intervals". Costs a handful of extra frames per
+    # candidate, not per job. Set to 0 to skip it and keep the coarse bounds.
+    flash_refine_interval: float = 0.25
+    # Ceiling on how many candidates get re-sampled, so a pathological file
+    # cannot turn a bounded second pass into an unbounded one.
+    flash_refine_max: int = 8
 
     tesseract_lang: str = "eng"
     # Tesseract page segmentation mode. 11 = sparse text, best for graphics.

@@ -479,12 +479,68 @@ def find_flashed_graphics(
             # Without this, a brand tag shown twice for the same length pairs
             # with itself: both are under flash_max_span, so either could be
             # read as the flash. "Briefly, then properly" means one is shorter.
-            if other.span <= brief.span:
+            #
+            # Compared as occupancy on both sides. A refined brief run carries a
+            # real measurement while an unrefined one still carries the coarse
+            # grid's underestimate, so comparing the two run spans would let
+            # refinement make a genuine flash look longer than the card that
+            # followed it.
+            if other.presence_span <= brief.presence_span:
                 continue
             if _overlap(brief.words, other.words) >= cfg.flash_match:
                 flashes.append((brief, other))
                 break
     return flashes
+
+
+def is_isolated(run: TextRun) -> bool:
+    """Whether this run is the only thing in its occupied stretch.
+
+    Only these are worth re-sampling: a run sharing its stretch with others is
+    part of a card that rewrites itself, and its own edges are not what "how
+    long was the graphic up" is asking about.
+    """
+    return run.presence_start == run.start and run.presence_end == run.end
+
+
+def refine_timestamps(
+    run: TextRun, duration: float, grid_interval: float, refine_interval: float
+) -> list[float]:
+    """Moments to sample to find a brief appearance's real edges.
+
+    It reaches one grid step either side, because all the coarse grid
+    establishes is that the graphic was absent at the neighbouring samples —
+    it could have arrived at any point in between.
+    """
+    if refine_interval <= 0:
+        return []
+    start = max(0.0, run.start - grid_interval)
+    end = min(duration, run.end + grid_interval)
+    stamps: list[float] = []
+    moment = start
+    while moment <= end + 1e-6:
+        stamps.append(round(moment, 3))
+        moment += refine_interval
+    return stamps
+
+
+def refine_run_bounds(
+    run: TextRun, frames: list[SampledFrame], cfg: TextConfig
+) -> tuple[float, float] | None:
+    """The first and last of `frames` still showing this run's text.
+
+    None when none of them do — OCR can read a graphic at one scale and miss it
+    at another, and a measurement that says a graphic was never there is worse
+    than the coarse one it would replace.
+    """
+    matching = [
+        frame.timestamp
+        for frame in sorted(frames, key=lambda f: f.timestamp)
+        if _overlap(run.words, frame_signature(frame, cfg)) >= cfg.run_match
+    ]
+    if not matching:
+        return None
+    return matching[0], matching[-1]
 
 
 def flashed_graphic_findings(
@@ -578,6 +634,40 @@ def _first_frame_path(frames: list[SampledFrame], timestamp: float) -> Path | No
     return None
 
 
+def refine_brief_runs(
+    path: Path, duration: float, workdir: Path, runs: list[TextRun], cfg: TextConfig
+) -> int:
+    """Re-sample around each brief appearance to find its real edges.
+
+    Mutates the runs in place and returns how many were refined. Only isolated
+    runs short enough to be candidates are touched, so the extra decoding is
+    proportional to how many suspicious moments a file has rather than to its
+    length.
+    """
+    if cfg.flash_refine_interval <= 0:
+        return 0
+    grid_interval = effective_interval(duration, cfg)
+    candidates = [
+        run for run in runs
+        if is_isolated(run) and run.presence_span <= cfg.flash_max_span
+    ][: cfg.flash_refine_max]
+
+    refined = 0
+    for run in candidates:
+        stamps = refine_timestamps(run, duration, grid_interval, cfg.flash_refine_interval)
+        extra = extract_frames(path, stamps, workdir)
+        for frame in extra:
+            frame.words = ocr_frame(frame.path, cfg)
+        bounds = refine_run_bounds(run, extra, cfg)
+        if bounds is None:
+            continue
+        run.start, run.end = bounds
+        # It was alone in its stretch, so the stretch is what it now measures.
+        run.presence_start, run.presence_end = bounds
+        refined += 1
+    return refined
+
+
 def detect(
     path: Path,
     duration: float,
@@ -634,6 +724,8 @@ def detect(
     if cfg.detect_flashed_graphics:
         runs = build_text_runs(frames, cfg)
         stats["text_runs"] = len(runs)
+        refined = refine_brief_runs(path, duration, workdir / "frames", runs, cfg)
+        stats["flash_candidates_refined"] = refined
         findings.extend(flashed_graphic_findings(frames, runs, cfg))
 
     for suspect in collect_suspects(frames, speller, cfg):

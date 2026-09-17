@@ -95,6 +95,14 @@ flash_max_span          = 2.0      # a brief appearance is this many seconds or 
 flash_min_proper_frames = 2        # ...and the proper one at least this many
 flash_match             = 0.6      # word overlap to call them the same graphic
 
+# The baseline grid cannot resolve a duration below its own interval: a graphic
+# landing on one sample is only bounded as "shorter than about two intervals".
+# So once a brief appearance is found, re-sample around it this often to find
+# its real edges. The cost is a handful of frames per candidate, not per job.
+# Set to 0 to skip the second pass and keep the coarse bounds.
+flash_refine_interval   = 0.25
+flash_refine_max        = 8        # ceiling on candidates re-sampled per file
+
 # OCR
 tesseract_lang = "eng"
 tesseract_psm  = 11                # 11 = sparse text, best for burnt-in graphics

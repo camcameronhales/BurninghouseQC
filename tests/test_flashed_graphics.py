@@ -18,11 +18,15 @@ from burninghouse_qc.config import TextConfig
 from burninghouse_qc.detectors.text import (
     OcrWord,
     SampledFrame,
+    TextRun,
     build_text_runs,
     find_flashed_graphics,
     flashed_graphic_findings,
     frame_signature,
     is_signature_token,
+    refine_brief_runs,
+    refine_run_bounds,
+    refine_timestamps,
 )
 
 
@@ -346,3 +350,164 @@ class TestOccupiedStretches:
         cfg = TextConfig()
         flashes = find_flashed_graphics(build_text_runs(frames, cfg), cfg)
         assert [(f[0].start, f[1].start) for f in flashes] == [(10.0, 14.5)]
+
+
+class TestRefiningBriefAppearances:
+    """The grid cannot resolve below its own interval.
+
+    A graphic landing on one 1.5s sample is only bounded as "shorter than about
+    three seconds" — 0.3s and 1.4s look identical. Flagging graphics *under two
+    seconds* needs the edges measured, which means sampling again around the
+    candidate rather than everywhere.
+    """
+
+    def test_it_reaches_a_grid_step_either_side(self):
+        run = TextRun(frozenset({"launch"}), 132.0, 132.0, 1, 132.0, 132.0)
+        stamps = refine_timestamps(run, duration=200.0, grid_interval=1.5, refine_interval=0.5)
+        assert stamps[0] == 130.5 and stamps[-1] == 133.5
+
+    def test_it_does_not_reach_past_the_file(self):
+        run = TextRun(frozenset({"launch"}), 0.2, 0.2, 1, 0.2, 0.2)
+        stamps = refine_timestamps(run, duration=1.0, grid_interval=1.5, refine_interval=0.5)
+        assert stamps[0] == 0.0 and stamps[-1] <= 1.0
+
+    def test_it_is_skipped_when_switched_off(self):
+        run = TextRun(frozenset({"launch"}), 132.0, 132.0, 1, 132.0, 132.0)
+        assert refine_timestamps(run, 200.0, 1.5, refine_interval=0.0) == []
+
+    def test_the_edges_come_from_the_dense_frames(self):
+        run = TextRun(frozenset({"product", "launch"}), 132.0, 132.0, 1, 132.0, 132.0)
+        dense = [
+            frame(130.5), frame(131.0),
+            frame(131.5, "PRODUCT", "LAUNCH"),
+            frame(132.0, "PRODUCT", "LAUNCH"),
+            frame(132.5, "PRODUCT", "LAUNCH"),
+            frame(133.0), frame(133.5),
+        ]
+        assert refine_run_bounds(run, dense, TextConfig()) == (131.5, 132.5)
+
+    def test_a_graphic_the_dense_pass_cannot_see_keeps_its_coarse_bounds(self):
+        """OCR can read a graphic at one moment and miss it at another. A
+        measurement saying it was never there is worse than a vague one."""
+        run = TextRun(frozenset({"product", "launch"}), 132.0, 132.0, 1, 132.0, 132.0)
+        assert refine_run_bounds(run, [frame(131.5), frame(132.5)], TextConfig()) is None
+
+    def test_refinement_does_not_cost_a_real_flash_its_finding(self):
+        """The interaction that made this need care.
+
+        Refining the brief run gives it a real span while the card it pairs
+        with still carries the coarse grid's underestimate. Comparing the two
+        run spans would make the flash look *longer* than the card and drop the
+        finding; comparing occupancy keeps it.
+        """
+        frames = [
+            frame(129.0),
+            frame(132.0, "fall", "prevention"),
+            frame(133.5),
+            frame(136.5, "fall", "prevention"),
+            frame(137.2, "fall", "prevention"),
+            frame(138.0, "worksafe.vic.gov.au"),
+            frame(139.5, "worksafe.vic.gov.au"),
+        ]
+        cfg = TextConfig()
+        runs = build_text_runs(frames, cfg)
+        brief = runs[0]
+        # What the dense pass would have found: on screen for 0.9s, which is
+        # longer than the 0.7s the *card* measures on the coarse grid.
+        brief.start, brief.presence_start = 131.6, 131.6
+        brief.end, brief.presence_end = 132.5, 132.5
+        assert brief.span > runs[1].span, "the trap this guards against"
+
+        flashes = find_flashed_graphics(runs, cfg)
+        assert [(f[0].start, f[1].start) for f in flashes] == [(131.6, 136.5)]
+
+
+class TestTheSecondPassItself:
+    """`refine_brief_runs` orchestrates the re-sampling.
+
+    Its parts are tested above; this covers what it does with them, because a
+    detector whose pieces all work and whose wiring does not is exactly the
+    failure SPEC §7 records.
+    """
+
+    def fake_video(self, monkeypatch, visible_from, visible_to):
+        """Stand in for extract + OCR: the graphic is up between those times."""
+        def extract(path, timestamps, workdir):
+            return [SampledFrame(timestamp=t, path=Path(f"/x/t{t}.png")) for t in timestamps]
+
+        def ocr(frame_path, cfg):
+            moment = float(str(frame_path).split("/t")[-1][:-4])
+            if visible_from <= moment <= visible_to:
+                return [
+                    OcrWord(text=w, confidence=92.0, box=(0, 0, 10, 10), line=(1, 1, 1))
+                    for w in ("PRODUCT", "LAUNCH")
+                ]
+            return []
+
+        monkeypatch.setattr("burninghouse_qc.detectors.text.extract_frames", extract)
+        monkeypatch.setattr("burninghouse_qc.detectors.text.ocr_frame", ocr)
+
+    def test_a_single_sample_becomes_a_measurement(self, monkeypatch, tmp_path):
+        self.fake_video(monkeypatch, 131.75, 132.5)
+        runs = build_text_runs(
+            [frame(130.5), frame(132.0, "PRODUCT", "LAUNCH"), frame(133.5)], TextConfig()
+        )
+        assert runs[0].span == 0.0, "the grid knows only that it was there at 132.0"
+
+        assert refine_brief_runs(Path("/x.mov"), 200.0, tmp_path, runs, TextConfig()) == 1
+        # It finds a start the grid never saw: the graphic was already up at
+        # 131.75, a quarter second before the sample that caught it.
+        assert (runs[0].start, runs[0].end) == (131.75, 132.5)
+        assert runs[0].span == 0.75
+        assert runs[0].presence_span == runs[0].span, "it was alone in its stretch"
+
+    def test_a_run_inside_a_longer_stretch_is_left_alone(self, monkeypatch, tmp_path):
+        self.fake_video(monkeypatch, 0.0, 999.0)
+        runs = build_text_runs(
+            [
+                frame(136.5, "PRODUCT", "LAUNCH"),
+                frame(138.0, "worksafe.vic.gov.au"),
+                frame(139.5, "worksafe.vic.gov.au"),
+            ],
+            TextConfig(),
+        )
+        assert refine_brief_runs(Path("/x.mov"), 200.0, tmp_path, runs, TextConfig()) == 0
+
+    def test_it_stops_at_the_candidate_ceiling(self, monkeypatch, tmp_path):
+        self.fake_video(monkeypatch, 0.0, 999.0)
+        # Six separate one-frame appearances, each isolated by an empty frame.
+        frames = []
+        for n in range(6):
+            frames += [frame(10.0 * n, "PRODUCT", "LAUNCH"), frame(10.0 * n + 1.5)]
+        runs = build_text_runs(frames, TextConfig())
+        assert len(runs) == 6, "six candidates, all of them brief"
+
+        cfg = TextConfig(flash_refine_max=2)
+        assert refine_brief_runs(Path("/x.mov"), 200.0, tmp_path, runs, cfg) == 2
+        # The rest keep the coarse bounds rather than being silently skipped.
+        assert [run.span for run in runs[2:]] == [0.0] * 4
+
+    def test_switching_it_off_does_nothing(self, monkeypatch, tmp_path):
+        self.fake_video(monkeypatch, 131.75, 132.5)
+        runs = build_text_runs(
+            [frame(130.5), frame(132.0, "PRODUCT", "LAUNCH"), frame(133.5)], TextConfig()
+        )
+        cfg = TextConfig(flash_refine_interval=0.0)
+        assert refine_brief_runs(Path("/x.mov"), 200.0, tmp_path, runs, cfg) == 0
+        assert runs[0].span == 0.0
+
+    def test_a_candidate_the_dense_pass_misses_is_not_counted_as_refined(
+        self, monkeypatch, tmp_path
+    ):
+        """OCR reading the graphic once and not again is not a measurement.
+
+        The run keeps the coarse bounds, and the count says nothing was
+        refined — the caller records that number, so claiming a refinement that
+        did not happen would misreport the file's own coverage.
+        """
+        self.fake_video(monkeypatch, 900.0, 999.0)   # never visible in this window
+        runs = build_text_runs(
+            [frame(130.5), frame(132.0, "PRODUCT", "LAUNCH"), frame(133.5)], TextConfig()
+        )
+        assert refine_brief_runs(Path("/x.mov"), 200.0, tmp_path, runs, TextConfig()) == 0
+        assert (runs[0].start, runs[0].end) == (132.0, 132.0)
