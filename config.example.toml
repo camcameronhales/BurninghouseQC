@@ -77,16 +77,22 @@ enabled = true
 
 # Sampling. Scene changes anchor denser sampling because supers arrive on cuts.
 #
-# At 1.5s, any card held for 3s or more is sampled at least twice — which is
+# At 1.0s, any card held for 2s or more is sampled at least twice — which is
 # what fail_min_occurrences needs before a misspelling can FAIL rather than
-# route to review. House clips run 2-10 minutes, which fits inside max_frames
-# at this cadence; longer clips widen the interval rather than losing coverage
-# at the end of the programme.
-sample_interval         = 1.5
+# route to review. It was 1.5s, which suits supers but not subtitles: a caption
+# is on screen about two seconds, so at 1.5s it landed on one frame and could
+# fall between two entirely. That is how "valuues" shipped.
+#
+# House clips run 2-10 minutes, which fits inside max_frames at this cadence;
+# longer clips widen the interval rather than losing coverage at the end of the
+# programme.
+sample_interval         = 1.0
 scene_threshold         = 0.35
 scene_followup_offsets  = [0.15, 0.60, 1.20]
 min_frame_gap           = 0.40
-max_frames              = 600      # ceiling per job, keeps long masters bounded
+max_frames              = 900      # ceiling per job, keeps long masters bounded
+                                   # 900 so a 10-minute master still gets the
+                                   # full 1.0s cadence; widening starts at ~12min
 
 # Watch for a graphic that appears briefly, vanishes, then appears properly
 # later — a super flashed on at the wrong moment and fixed a few shots on.

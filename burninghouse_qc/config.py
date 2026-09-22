@@ -123,7 +123,7 @@ class TextConfig:
     # Baseline sampling cadence, in seconds. At 1.5s any card held for 3s or
     # more is sampled at least twice, which is what `fail_min_occurrences`
     # needs before a misspelling can fail a file rather than route to review.
-    sample_interval: float = 1.5
+    sample_interval: float = 1.0
     # ffmpeg scene score above which a cut is assumed — graphics-heavy sections
     # get denser coverage because titles usually arrive on a cut.
     scene_threshold: float = 0.35
@@ -134,7 +134,7 @@ class TextConfig:
     # Hard ceiling on frames per job, to bound runtime on long masters. 600
     # lets a 10-minute deliverable keep the full 1.5s cadence; longer clips
     # widen the interval rather than losing coverage at the end.
-    max_frames: int = 600
+    max_frames: int = 900
     # Watch for a graphic that appears briefly, vanishes, then appears properly
     # later — a super flashed on at the wrong moment and fixed a few shots on.
     detect_flashed_graphics: bool = True

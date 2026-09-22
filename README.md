@@ -83,17 +83,23 @@ a plain text file, one word per line, re-read on every job, no restart needed.
 ### Frame sampling and runtime
 
 Sampling every frame would take longer than the render. The pipeline samples on
-a fixed interval (default every 1.5s) *and* adds extra frames just after each
-detected scene change, because supers almost always arrive on a cut. 1.5s is
-chosen so that any card held for 3s or more is sampled at least twice, which is
+a fixed interval (default every 1.0s) *and* adds extra frames just after each
+detected scene change, because supers almost always arrive on a cut. 1.0s is
+chosen so that anything held for 2s or more is sampled at least twice, which is
 what a misspelling needs before it can fail a file rather than route to review.
 
-House deliverables run **2–10 minutes**, which fits the full cadence inside the
-`max_frames` budget. Longer clips widen the interval rather than losing
-coverage at the end of the programme.
+**It was 1.5s, and that suited supers but not subtitles.** A caption is on
+screen for about two seconds, so at 1.5s it landed on a single frame and could
+fall between two samples entirely — which is how a misspelled subtitle passed a
+file clean. Denser sampling is the only lever for text that short.
 
-Measured on real 1080p interview footage on the target Mac: **~16 seconds of QC
-per minute of video**, so a 10-minute master lands around 2m 40s. Three things
+House deliverables run **2–10 minutes**, which fits the full cadence inside the
+`max_frames` budget of 900. Longer clips widen the interval rather than losing
+coverage at the end of the programme; widening starts at about 12 minutes.
+
+Measured on real 1080p interview footage on the target Mac at the old 1.5s
+cadence: **~16 seconds of QC per minute of video**. Expect roughly half as much
+again at 1.0s, since OCR dominates and there are 50% more frames to read. Three things
 keep it there — black and scene detection share a single decode pass, the whole
 baseline grid is pulled in one more pass instead of one seek per frame, and
 frames are normalised to ~1440px tall before OCR rather than blindly upscaled
