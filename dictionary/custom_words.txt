@@ -13,6 +13,11 @@ Burning House
 
 # --- Client & brand names (add as they come up) ---
 
+# --- Corporate / interview vocabulary ---
+# Real words the bundled US English dictionary does not carry. Flagged on real
+# client work, not guessed at.
+lifecycle
+
 # --- Industry jargon / abbreviations ---
 ProRes
 timecode
