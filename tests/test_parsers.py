@@ -124,3 +124,40 @@ class TestSilenceClassification:
     def test_short_mid_silence_is_review(self):
         severity, _ = classify_silence(SilenceRun(6.0, 7.5, 1.5), 16.0, self.cfg)
         assert severity is Severity.REVIEW
+
+
+# -- a fade is short; a dead tail is not a fade --------------------------
+
+class TestEdgeArtifactsHaveALengthLimit:
+    """From a real report on MMR_IA_Executive Interviews_Jackie Power_SHORT.
+
+    A 4m04s deliverable came back with 76.56s of black reported as "normal for
+    a fade" and 154.01s of silence as "normal handles", because both ran to the
+    end of the file and `at_edge` was tested before anything looked at how long
+    they were. Two thirds of that file was dead and the report said it was fine.
+    """
+
+    def test_a_real_fade_at_the_tail_is_still_information(self):
+        run = BlackRun(start=242.50, end=244.16, duration=1.66)
+        severity, message = classify_black(run, 244.16, BlackConfig())
+        assert severity is Severity.INFO
+        assert "fade" in message
+
+    def test_black_running_to_the_end_is_not_a_fade(self):
+        """The report called this one "normal for a fade"."""
+        run = BlackRun(start=167.48, end=244.04, duration=76.56)
+        severity, message = classify_black(run, 244.16, BlackConfig())
+        assert severity is Severity.FAIL
+        assert "mid-programme" in message
+
+    def test_a_real_tail_handle_is_still_information(self):
+        run = SilenceRun(start=241.00, end=244.16, duration=3.16)
+        severity, _ = classify_silence(run, 244.16, SilenceConfig())
+        assert severity is Severity.INFO
+
+    def test_silence_over_half_the_file_is_not_a_handle(self):
+        """The report called this one "normal handles"."""
+        run = SilenceRun(start=90.11, end=244.12, duration=154.01)
+        severity, message = classify_silence(run, 244.16, SilenceConfig())
+        assert severity is Severity.FAIL
+        assert "dropout" in message

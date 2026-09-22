@@ -165,6 +165,11 @@ lower-third region rather than OCR.
   `flash_refine_max`, and costing frames per candidate rather than per job.
   It is covered by tests against a stubbed decoder, and has not yet run against
   a real deliverable — the WestUrban frames predate it.
+- **Subtitles on a separate track are invisible.** `ffprobe` is read for video
+  and audio streams only, and frame extraction never burns subtitles in, so a
+  soft subtitle or caption track is not checked and nothing says so. Only text
+  burnt into the picture is read. Found when a deliverable with misspelled
+  subtitles came back with no spelling findings at all.
 - **Custom dictionary does not sync** between the two machines. Hand-copied;
   currently unedited (20 shipped entries) on both.
 - **`ProcessType` fix may not be applied.** The launchd agent originally

@@ -86,9 +86,10 @@ def classify(
     covers_whole_file = (
         media_duration > 0 and run.start <= cfg.edge_grace and end >= media_duration - cfg.edge_grace
     )
-    at_edge = run.start <= cfg.edge_grace or (
-        media_duration > 0 and end >= media_duration - cfg.edge_grace
-    )
+    at_edge = (
+        run.start <= cfg.edge_grace
+        or (media_duration > 0 and end >= media_duration - cfg.edge_grace)
+    ) and duration <= cfg.edge_max_duration
 
     if covers_whole_file:
         return Severity.FAIL, "Audio is silent for the entire duration — no programme audio."

@@ -60,7 +60,10 @@ def _touches_edge(run: BlackRun, duration: float, grace: float) -> bool:
 def classify(
     run: BlackRun, media_duration: float, cfg: BlackConfig
 ) -> tuple[Severity | None, str]:
-    at_edge = _touches_edge(run, media_duration, cfg.edge_grace)
+    at_edge = (
+        _touches_edge(run, media_duration, cfg.edge_grace)
+        and run.duration <= cfg.edge_max_duration
+    )
     sustained = run.duration >= cfg.fail_duration
 
     if at_edge:

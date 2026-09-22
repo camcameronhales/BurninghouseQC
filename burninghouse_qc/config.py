@@ -91,6 +91,11 @@ class BlackConfig:
     # human look, "ignore" drops it. Fades are on nearly every deliverable, so
     # flagging them for review makes every file look borderline.
     edge_severity: str = "info"
+    # A fade is short. A run that touches the head or tail but lasts longer
+    # than this is not a fade — it is programme that is missing — and falls
+    # through to the normal rules. Without a cap, black running to the end of
+    # the file is reported as "normal for a fade" however long it is.
+    edge_max_duration: float = 10.0
 
 
 @dataclass
@@ -106,6 +111,9 @@ class SilenceConfig:
     # available.
     edge_severity: str = "info"
     # A file with no audio stream at all: "fail" | "review" | "ignore".
+    # As with black: a handle is short, and silence to the end of the file is
+    # not a handle however it is labelled.
+    edge_max_duration: float = 30.0
     missing_audio: str = "review"
 
 

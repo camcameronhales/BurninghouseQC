@@ -56,6 +56,7 @@ edge_grace        = 1.50           # black this close to head/tail counts as an 
 # Fades are on nearly every deliverable: "info" notes them in the report without
 # affecting the verdict. "review" or "ignore" also available.
 edge_severity     = "info"
+edge_max_duration = 10.0           # longer than this is not a fade
 
 
 [silence]
@@ -67,6 +68,7 @@ edge_grace    = 1.50
 # Handles at head and tail are on every deliverable — "info" notes them without
 # making an otherwise clean file look borderline.
 edge_severity = "info"
+edge_max_duration = 30.0           # longer than this is not a handle
 missing_audio = "review"           # "fail" | "review" | "ignore"
 
 
