@@ -97,6 +97,12 @@ class TestAnimationFragments:
     """Titles animate on. A frame caught mid-wipe reads the half-revealed super
     as a word — real examples from client work: "nson" from "Branson", "offic"
     from "office", "llent" from a longer word. They exist for a single frame.
+
+    `report_min_occurrences = 2` suppresses them, and these tests pin that
+    setting rather than take the default: the default is now 1, because
+    subtitles are on screen for about one sampled frame and were being missed
+    entirely. The mechanism still works and is still what to reach for when
+    a job has no subtitles in it.
     """
 
     def _suspects(self, words_per_frame, cfg):
@@ -115,13 +121,13 @@ class TestAnimationFragments:
         return collect_suspects(frames, Speller(SpellingConfig()), cfg)
 
     def test_a_one_frame_fragment_is_not_reported(self):
-        cfg = TextConfig()
+        cfg = TextConfig(report_min_occurrences=2)
         suspects = self._suspects([["nson"], ["clean"], ["clean"]], cfg)
         assert suspects == []
 
     def test_a_word_held_across_frames_is_still_reported(self):
         """A real super holds for seconds and gets sampled repeatedly."""
-        cfg = TextConfig()
+        cfg = TextConfig(report_min_occurrences=2)
         suspects = self._suspects([["Acheiving"], ["Acheiving"], ["Acheiving"]], cfg)
         assert [s.word for s in suspects] == ["Acheiving"]
 
@@ -132,5 +138,24 @@ class TestAnimationFragments:
 
     @pytest.mark.parametrize("fragment", ["nson", "offic", "llent"])
     def test_real_fragments_from_client_work(self, fragment):
-        cfg = TextConfig()
+        cfg = TextConfig(report_min_occurrences=2)
         assert self._suspects([[fragment], ["unrelated"]], cfg) == []
+
+    def test_the_default_reports_a_misspelling_seen_once(self):
+        """Why the default is 1.
+
+        "valuues" was burnt into a subtitle on a client deliverable and the
+        file came back with no spelling findings at all: the caption was on
+        screen for about one sampled frame, and two were required before
+        anything was said.
+        """
+        from burninghouse_qc.detectors.text import classify
+        from burninghouse_qc.findings import Severity
+
+        cfg = TextConfig()
+        suspects = self._suspects([["valuues"], ["unrelated"]], cfg)
+        assert [s.word for s in suspects] == ["valuues"]
+
+        severity, message = classify(suspects[0], cfg)
+        assert severity is Severity.REVIEW, "one sighting can never fail a file"
+        assert "only in one sampled frame" in message

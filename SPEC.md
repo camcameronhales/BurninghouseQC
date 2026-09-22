@@ -99,10 +99,17 @@ and those are the ones worth knowing about:
    all. Titles animate on, and a frame caught mid-wipe reads the half-revealed
    super as a word (`nson` from "Branson", `offic` from "office").
 
-**Control 4 is the one that may have gone too far.** It is the only change that
-reduces sensitivity rather than just cutting noise: a misspelling on a card
-shown for under ~3 seconds can now be missed entirely.
-`text.report_min_occurrences = 1` reverts it.
+**Control 4 did go too far, and is now off by default.** It was the only change
+that reduced sensitivity rather than just cutting noise, and it cost a real
+catch: "valuues" was burnt into a subtitle on a client deliverable and the file
+came back with no spelling findings at all. A caption is on screen about two
+seconds against a 1.5s grid, so it lands on one sampled frame, and two were
+required before anything was said.
+
+`text.report_min_occurrences` is now 1. A single sighting routes to *review*,
+never *fail* — `fail_min_occurrences` is still 2 — so the cost is review noise
+from animation fragments rather than a wrongly failed file. Set it back to 2 on
+work with no subtitles in it.
 
 ## 5. The open problem
 
@@ -165,6 +172,12 @@ lower-third region rather than OCR.
   `flash_refine_max`, and costing frames per candidate rather than per job.
   It is covered by tests against a stubbed decoder, and has not yet run against
   a real deliverable — the WestUrban frames predate it.
+- **Spell-check cannot see a real word in the wrong place.** The same subtitle
+  read "resinate" for "resonate", and `resinate` is a word — a resin treatment.
+  Subtitles are transcribed speech, where errors are overwhelmingly homophones
+  and real-word slips (their/there, form/from, lead/led), and no dictionary
+  catches any of them. On subtitles this narrows a human read; it does not
+  replace one.
 - **Subtitles on a separate track are invisible.** `ffprobe` is read for video
   and audio streams only, and frame extraction never burns subtitles in, so a
   soft subtitle or caption track is not checked and nothing says so. Only text

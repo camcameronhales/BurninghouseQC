@@ -120,12 +120,19 @@ ocr_max_scale     = 3.0
 min_confidence         = 70.0      # below this the token is discarded as noise
 fail_confidence        = 85.0      # at/above this a misspelling can be a FAIL
 
-# Titles animate on, and a frame caught mid-wipe reads the half-revealed super
-# as a word — "nson" from "Branson", "offic" from "office". Those fragments
-# exist for one frame; a real super holds for seconds and is sampled several
-# times. Set to 1 to see everything, at the cost of a flag on most animated
-# lower thirds.
-report_min_occurrences = 2         # frames a word must appear in to be reported
+# Frames a word must appear in before it is reported at all.
+#
+# 1, because subtitles do not survive 2. A caption is on screen about two
+# seconds and the grid samples every 1.5s, so most captions land on exactly one
+# frame — and a misspelling in one is then never mentioned. That is how
+# "valuues" shipped in a deliverable while the QC passed the file.
+#
+# The cost is the reason it was 2: a frame caught mid-wipe reads a half-revealed
+# super as a word ("nson" from "Branson"), and those now show up. They route to
+# review rather than fail, because fail_min_occurrences below is still 2, so a
+# single sighting can never fail a file on its own. Set back to 2 if the review
+# noise outweighs the catches on work without subtitles.
+report_min_occurrences = 1         # frames a word must appear in to be reported
 fail_min_occurrences   = 2         # ...and to be a FAIL rather than a review
 min_word_length      = 4           # shorter tokens are too noisy to trust
 
