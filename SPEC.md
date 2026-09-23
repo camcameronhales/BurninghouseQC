@@ -258,13 +258,18 @@ tests/              the suite; see below
 FFmpeg and Tesseract installed. The count is deliberately not written down
 here — it was wrong in this document twice before anyone noticed.
 
-## 9. If picking this up as a skill
+## 9. The skill
 
-The natural shape is a skill that owns the *tuning and diagnosis* loop rather
-than the app: read a `.qc.html` or the kept frames, judge whether a finding is
-real, and propose the specific config change. The app itself is a normal Python
-package and does not need to be a skill to be useful.
+`.claude/skills/burninghouse-qc-diagnosis/` owns the tuning and diagnosis loop:
+read a `.qc.html` or the kept frames, judge whether a finding is real, work out
+why a miss was missed, and name the specific config change or dictionary entry.
+The app itself stays a normal Python package — it does not need to be a skill to
+be useful, and the skill does not wrap it.
 
-The first task for whoever picks this up is §5 — and the honest first question
-is whether OCR can see that graphic at all, because everything downstream
-assumes it can.
+`references/knobs.md` holds the symptom-to-setting table. Every default quoted
+in it was checked against `config.py` when written; if the two drift, the code
+is right and the table is stale.
+
+The skill has not been run through an eval set. It was written from one long
+diagnosis session rather than tested across many, so treat its coverage as
+unproven in the same way §3 treats the app's.
